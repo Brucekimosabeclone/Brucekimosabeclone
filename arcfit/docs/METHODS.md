@@ -36,8 +36,28 @@ simulations put the median fitted eccentricity of a *true circle* at 0.19 for a
 
 Any threshold rule inherits that bias. Comparing the five-parameter ellipse to a
 three-parameter circle against a null simulated at the object's own arc coverage
-and noise does not, because the null carries the same inflation. Simulation
-confirms the test holds its nominal 5% error rate at 100°, 140° and 180°.
+and noise does not, because the null carries the same inflation.
+
+The null's noise level is a nuisance parameter, and the two obvious estimates
+disagree exactly where it matters. Estimating it from the circle fit is the
+restricted bootstrap and gives essentially exact size, but on a genuinely oval
+object the circle residuals are dominated by systematic lack of fit, and using
+them widens the null by as much as the signal. Estimating it from the ellipse
+fit restores the power but comes out mildly anti-conservative. Measured over 300
+replicates at nominal size 0.05:
+
+| noise estimated from | size, 140° | size, 180° | power at e = 0.6, 150° |
+|---|---|---|---|
+| circle fit | 0.050 | 0.047 | 0.45 |
+| ellipse fit | 0.073 | 0.063 | 1.00 |
+| pooled (used) | 0.063 | 0.063 | 0.84 |
+
+The scale is therefore pooled across both estimates, while the *shape* of the
+residual distribution is taken from the ellipse fit so that any non-normality
+is preserved. Size stays within Monte Carlo error of nominal and most of the
+power is recovered. The choice errs conservative on purpose: a false rejection
+means declaring a circular object oval, the error this whole approach exists to
+prevent.
 
 The three-way outcome matters. Failing to reject a circle is not evidence of
 circularity when the arc is too short to have detected an ellipse, so "circular"

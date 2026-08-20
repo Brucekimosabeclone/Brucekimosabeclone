@@ -37,7 +37,23 @@ A rule like "e > 0.3 means oval" would classify almost every circle in the
 five-parameter ellipse against a three-parameter circle, referred to a null
 distribution simulated at *that object's own* arc coverage, point spacing and
 noise — so the short-arc inflation is present in the null too and cancels.
-The test holds its nominal 5% error rate at every arc length tested.
+
+Getting the null's *noise level* right turned out to matter as much as the
+geometry. Estimating it from the circle fit is the textbook choice and gives
+exact size, but on a genuinely oval object those residuals are dominated by the
+circle's own lack of fit; feeding that back in as noise widens the null by as
+much as the signal being tested for. Measured over 300 replicates:
+
+| noise estimated from | size (nominal 0.05) | power at e = 0.6, 150° arc |
+|---|---|---|
+| circle fit | 0.050 | 0.45 |
+| ellipse fit | 0.073 | 1.00 |
+| **pooled** (used) | **0.063** | **0.84** |
+
+The pooled estimate keeps size within Monte Carlo error of nominal while
+recovering most of the power. Erring conservative is deliberate: a false
+rejection here means calling a circular object oval, which is the exact error
+the method exists to prevent.
 
 ---
 

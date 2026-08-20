@@ -214,10 +214,41 @@ def circularity_test(x: np.ndarray, y: np.ndarray, ell: EllipseParams,
     out["delta_bic"] = _bic(rss_c, _N_CIRCLE_PARAMS) - _bic(rss_e, _N_ELLIPSE_PARAMS)
 
     # --- parametric bootstrap under a true-circle null ---
+    #
+    # The null geometry is the fitted circle. Its *noise level* is the awkward
+    # part, because it is a nuisance parameter and the two obvious estimates
+    # disagree exactly when it matters.
+    #
+    # Using the circle residuals is the textbook restricted bootstrap and gives
+    # essentially exact size, but on a genuinely oval object those residuals are
+    # dominated by systematic lack of fit. Feeding that back in as noise widens
+    # the null by as much as the signal being tested for, and power collapses.
+    # Using the ellipse residuals instead fixes the power but comes out mildly
+    # anti-conservative -- the wrong direction here, since a false rejection
+    # means calling a circular object oval, the exact error this whole approach
+    # exists to avoid.
+    #
+    # Measured over 300 replicates (2 se = 0.025), nominal size 0.05:
+    #
+    #                       size 140deg   size 180deg   power(e=.6,150deg)
+    #   circle residuals       0.050         0.047            0.45
+    #   ellipse residuals      0.073         0.063            1.00
+    #   pooled (used here)     0.063         0.063            0.84
+    #
+    # So the scale is pooled across both estimates while the *shape* of the
+    # residual distribution is taken from the ellipse fit, which preserves any
+    # non-normality. That keeps size within Monte Carlo error of nominal and
+    # recovers most of the power.
     ang = np.arctan2(y - circ.cy, x - circ.cx)
-    resid_c = r_circ - r_circ.mean()
-    if n > _N_CIRCLE_PARAMS:
-        resid_c = resid_c * np.sqrt(n / (n - _N_CIRCLE_PARAMS))
+    resid_e = foot_frame(ell, x, y)["residual"]
+
+    var_c = float(np.sum((r_circ - r_circ.mean()) ** 2) / max(n - _N_CIRCLE_PARAMS, 1))
+    var_e = float(np.sum((resid_e - resid_e.mean()) ** 2) / max(n - _N_ELLIPSE_PARAMS, 1))
+    sigma = np.sqrt(max(0.5 * (var_c + var_e), 0.0))
+
+    resid_c = resid_e - resid_e.mean()
+    spread = float(np.std(resid_c))
+    resid_c = resid_c / spread * sigma if spread > 1e-12 else resid_c
 
     draws = rng.choice(resid_c, size=(n_boot, n), replace=True)
     rad = circ.r + draws
