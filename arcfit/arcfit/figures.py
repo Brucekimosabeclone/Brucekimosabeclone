@@ -114,14 +114,39 @@ def save_figure(fig, out_path, dpi: int = 600, also_pdf: bool = True,
     return written
 
 
+def _emptiest_corner(ax, xs, ys) -> str:
+    """Which axes corner sits furthest from the plotted data.
+
+    An annotation box dropped in a fixed corner will sooner or later cover the
+    thing it describes; across 167 objects at every orientation that is a
+    certainty rather than a risk.
+    """
+    x0, x1 = sorted(ax.get_xlim())
+    y0, y1 = sorted(ax.get_ylim())
+    xs = np.asarray(xs, float)
+    ys = np.asarray(ys, float)
+    ok = np.isfinite(xs) & np.isfinite(ys)
+    if not ok.any() or x1 <= x0 or y1 <= y0:
+        return "upper left"
+    u = (xs[ok] - x0) / (x1 - x0)
+    v = (ys[ok] - y0) / (y1 - y0)
+    best, best_d = "upper left", -1.0
+    for name, (cu, cv) in {"upper left": (0.0, 1.0), "upper right": (1.0, 1.0),
+                           "lower left": (0.0, 0.0), "lower right": (1.0, 0.0)}.items():
+        d = float(np.min(np.hypot(u - cu, v - cv)))
+        if d > best_d:
+            best, best_d = name, d
+    return best
+
+
 def _annot(ax, lines: Sequence[str], loc: str = "upper left") -> None:
     ax.text(0.02 if "left" in loc else 0.98,
             0.98 if "upper" in loc else 0.02,
             "\n".join(lines),
             transform=ax.transAxes, fontsize=7.5, va="top" if "upper" in loc else "bottom",
-            ha="left" if "left" in loc else "right", color=PALETTE["ink"],
+            ha="left" if "left" in loc else "right", color=PALETTE["ink"], zorder=20,
             bbox=dict(boxstyle="round,pad=0.4", facecolor="white",
-                      edgecolor=PALETTE["faint"], alpha=0.92, linewidth=0.6))
+                      edgecolor=PALETTE["faint"], alpha=0.94, linewidth=0.6))
 
 
 def _fmt_ci(value: float, lo: float, hi: float, unit: str = "", dp: int = 2) -> str:
@@ -189,6 +214,22 @@ def object_figure(fit, points_cm: np.ndarray, out_path,
                 # Desaturate so the overlay reads clearly over field clutter.
                 shown = np.dstack([grey] * 3) * 0.55 + rgb * 0.45
                 ax.imshow(np.clip(shown, 0, 255).astype(np.uint8))
+
+                # Crop to the object and card. Shown whole, the object occupies a
+                # few percent of a field photograph and the overlay is invisible.
+                focus = []
+                if points_px is not None and len(points_px):
+                    focus.append(np.asarray(points_px, float))
+                if card_corners_px is not None:
+                    focus.append(np.asarray(card_corners_px, float))
+                if focus:
+                    f = np.vstack(focus)
+                    cx0, cy0 = f.min(axis=0)
+                    cx1, cy1 = f.max(axis=0)
+                    pad = 0.30 * max(cx1 - cx0, cy1 - cy0, 1.0)
+                    h_img, w_img = shown.shape[:2]
+                    ax.set_xlim(max(cx0 - pad, 0), min(cx1 + pad, w_img))
+                    ax.set_ylim(min(cy1 + pad, h_img), max(cy0 - pad, 0))
                 if card_corners_px is not None:
                     c = np.asarray(card_corners_px, float)
                     ax.add_patch(MplPolygon(c, closed=True, fill=False,
@@ -259,7 +300,7 @@ def object_figure(fit, points_cm: np.ndarray, out_path,
     # A scale bar is meaningful here because this panel is metric.
     bar = 5.0 if ell.a < 14 else 10.0
     bx = bounds[0] + 0.06 * (bounds[1] - bounds[0])
-    by = bounds[3] - 0.08 * (bounds[3] - bounds[2])
+    by = bounds[2] + 0.93 * (bounds[3] - bounds[2])
     ax.plot([bx, bx + bar], [by, by], "-", lw=3, color=PALETTE["ink"], zorder=8,
             solid_capstyle="butt")
     ax.text(bx + bar / 2, by - 0.03 * (bounds[3] - bounds[2]), f"{bar:g} cm",
@@ -270,17 +311,24 @@ def object_figure(fit, points_cm: np.ndarray, out_path,
     ax.set_aspect("equal")
     ax.set_xlabel("cm"); ax.set_ylabel("cm")
     ax.set_title(f"{'b' if image_path else 'a'}  Reconstruction", loc="left", fontsize=9)
-    ax.legend(loc="lower right", fontsize=6.5, handlelength=1.6)
+    # Legend below the axes rather than inside it. The annotation block is placed
+    # automatically in whichever corner is emptiest, so an in-axes legend would
+    # eventually collide with it; putting the legend outside removes the whole
+    # class of collision instead of trading one overlap for another.
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.13), ncol=3,
+              fontsize=6.5, handlelength=1.6, columnspacing=1.2,
+              borderaxespad=0.0)
 
+    _drawn = np.vstack([solid, dashed, pts])
     _annot(ax, [
         f"{fit.object_id}",
-        f"major 2a = {_fmt_ci(fit.major_axis_cm, fit.major_axis_lo, fit.major_axis_hi, ' cm')}",
-        f"minor 2b = {_fmt_ci(fit.minor_axis_cm, fit.minor_axis_lo, fit.minor_axis_hi, ' cm')}",
-        f"e = {_fmt_ci(fit.eccentricity, fit.eccentricity_lo, fit.eccentricity_hi, '', 3)}",
-        f"arc = {fit.coverage_deg:.0f}° ({100 * fit.coverage_perimeter_frac:.0f}% perim.)",
-        f"RMS = {fit.rms_residual_mm:.2f} mm, n = {fit.n_points}",
+        f"2a {_fmt_ci(fit.major_axis_cm, fit.major_axis_lo, fit.major_axis_hi, ' cm', 1)}",
+        f"2b {_fmt_ci(fit.minor_axis_cm, fit.minor_axis_lo, fit.minor_axis_hi, ' cm', 1)}",
+        f"e  {_fmt_ci(fit.eccentricity, fit.eccentricity_lo, fit.eccentricity_hi, '', 2)}",
+        f"arc {fit.coverage_deg:.0f}° ({100 * fit.coverage_perimeter_frac:.0f}% perim.)",
+        f"RMS {fit.rms_residual_mm:.2f} mm, n = {fit.n_points}",
         f"{fit.shape_class}  (p = {fit.p_bootstrap:.3f}), tier {fit.tier}",
-    ])
+    ], loc=_emptiest_corner(ax, _drawn[:, 0], _drawn[:, 1]))
 
     # --- panel: residuals ------------------------------------------------
     resid_df = None
