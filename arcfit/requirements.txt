@@ -1,0 +1,10 @@
+# Minimum versions. See requirements-frozen.txt for the exact tested set.
+numpy>=1.24
+scipy>=1.10
+matplotlib>=3.7
+pandas>=2.0
+Pillow>=9.5
+openpyxl>=3.1
+# Optional: enables automatic scale-card detection. Without it, arcfit falls
+# back to manual four-corner calibration rather than failing.
+opencv-python>=4.7

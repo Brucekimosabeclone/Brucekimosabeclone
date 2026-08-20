@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "arcfit"
+version = "1.0.0"
+description = "Ellipse reconstruction of fragmented objects from scaled photographs"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { file = "LICENSE" }
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.10",
+    "matplotlib>=3.7",
+    "pandas>=2.0",
+    "Pillow>=9.5",
+    "openpyxl>=3.1",
+]
+
+[project.optional-dependencies]
+detect = ["opencv-python>=4.7"]
+test = ["pytest>=7.0"]
+
+[project.scripts]
+arcfit = "arcfit.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["arcfit*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["error::RuntimeWarning"]
+markers = [
+    "slow: statistical calibration tests needing many replicates (deselect with -m 'not slow')",
+]
