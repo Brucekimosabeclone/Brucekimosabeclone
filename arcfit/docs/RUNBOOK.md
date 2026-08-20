@@ -36,13 +36,43 @@ systematic error only after step 8.
 
 ## Step 0 — Prerequisites
 
-Install **Python from python.org**, 3.9 or newer, ticking *"Add python.exe to
-PATH"*. Prefer this over the Microsoft Store build: the python.org installer
-bundles Tk, which the digitiser window needs.
+Install **Python from python.org**, 3.9 or newer. On the first installer screen
+tick **both**:
+
+- *"Add python.exe to PATH"*
+- *"py launcher"* (install for all users)
+
+Prefer python.org over the Microsoft Store build. The Store build works but
+redirects parts of the file system in ways that confuse virtualenvs, and the
+python.org installer reliably bundles Tk, which the digitiser window needs.
+
+**Check what you have before going any further:**
+
+```powershell
+Get-Command py, python, python3 -ErrorAction SilentlyContinue | Select-Object Name, Source
+```
+
+Read the result:
+
+| What you see | What it means | What to do |
+|---|---|---|
+| a `py` row with a path | launcher present | use `py -3` below |
+| only a `python` row | Python present, no launcher | use `python` wherever this guide says `py -3` |
+| nothing at all | Python is not installed | install it from python.org, then **close and reopen PowerShell** |
+| typing `python` opens the Microsoft Store | that is Windows' placeholder alias, not Python | install from python.org, or turn off the alias in *Settings → Apps → Advanced app settings → App execution aliases* |
+
+The reopen matters: a shell opened before the install still has the old PATH, so
+`py` stays "not recognized" even though the install succeeded.
+
+Confirm the version:
 
 ```powershell
 py --version
 ```
+
+If `py` is not recognized but `python` works, that is fine — substitute
+`python` for `py -3` throughout, and everything else in this guide is
+unchanged.
 
 Free disk: about **8 GB** (2.5 GB zip, 2.5 GB extracted, ~1 GB outputs, headroom).
 
@@ -102,6 +132,11 @@ py -3 -m venv .venv
 pip install -r requirements.txt
 pip install -e .
 ```
+
+No `py`? Use `python -m venv .venv` for that one line; the rest is identical.
+If `.venv\Scripts\activate` then reports *"the module '.venv' could not be
+loaded"*, the virtualenv was never created — the `venv` line above failed, so
+scroll up and fix that first rather than this.
 
 `mkdir C:\manos` is harmless if step 1 already created it — but this step does
 not depend on step 1, so it is here explicitly. If you already cloned somewhere
@@ -338,6 +373,15 @@ without the images.
 ---
 
 ## Troubleshooting
+
+**`py` is not recognized.** The Python launcher is not installed or not on PATH.
+Run the `Get-Command` check in step 0. If `python` works, use that instead. If
+nothing works, install from python.org and reopen PowerShell — a shell opened
+before the install keeps the old PATH.
+
+**`the module '.venv' could not be loaded`.** Nothing to activate: the
+`venv` command failed earlier, usually because `py` was not found. Fix that
+first; this error is only the symptom.
 
 **`arcfit` is not recognised.** The virtualenv is not active. Run
 `.venv\Scripts\activate`, or use `py -m arcfit.cli ...` instead.
