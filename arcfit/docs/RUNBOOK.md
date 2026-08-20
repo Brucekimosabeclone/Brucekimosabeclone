@@ -46,6 +46,12 @@ py --version
 
 Free disk: about **8 GB** (2.5 GB zip, 2.5 GB extracted, ~1 GB outputs, headroom).
 
+**A note on your shell.** Every command here is written for PowerShell, one per
+line. If your shell banner says *"Install the latest PowerShell for new
+features"* you are on Windows PowerShell 5.1, which does not support `&&`
+between commands — run the lines separately rather than joining them. Nothing in
+this guide requires PowerShell 7.
+
 ## Step 1 — Get the photographs out of Dropbox
 
 In the browser, open the shared folder, then **⋯ → Download**. 167 files at
@@ -76,7 +82,15 @@ size means placeholder files rather than real ones.
 
 ## Step 2 — Install arcfit
 
+> **Paste one line at a time, not the whole block.** Windows PowerShell 5.1 —
+> the version that ships with Windows, and the one you have if the shell greets
+> you with *"Install the latest PowerShell for new features"* — does **not**
+> support `&&` between commands. It was added in PowerShell 7. Joining these
+> with `&&` fails with *"The token '&&' is not a valid statement separator in
+> this version"*. Run them as separate lines, or use `;` between them.
+
 ```powershell
+mkdir C:\manos
 cd C:\manos
 git clone https://github.com/Brucekimosabeclone/Brucekimosabeclone.git code
 cd code
@@ -87,6 +101,16 @@ py -3 -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
 pip install -e .
+```
+
+`mkdir C:\manos` is harmless if step 1 already created it — but this step does
+not depend on step 1, so it is here explicitly. If you already cloned somewhere
+else, move it rather than cloning again:
+
+```powershell
+mkdir C:\manos
+Move-Item C:\Users\<you>\code C:\manos\code
+cd C:\manos\code
 ```
 
 No git? Download the branch as a ZIP from the pull request page, extract to
