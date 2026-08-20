@@ -112,6 +112,11 @@ If your scale card is not 10 × 2 cm with 1 cm squares, set it once — every
 command takes `--card-width --card-height --card-cols --card-rows`, and nothing
 is hard-coded, so a correction later does not mean re-digitising.
 
+**Running this on a real assemblage for the first time?** `docs/RUNBOOK.md` is a
+step-by-step operational guide — getting the images off Dropbox, installing on
+Windows, and the order to do things in so a mistake surfaces in ten minutes
+rather than after seven hours of digitising.
+
 ## Digitiser keys
 
 | key | action |
