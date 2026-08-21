@@ -228,11 +228,16 @@ def cmd_package(a) -> int:
     from .supplement import build_supplement
 
     info = build_supplement(a.workdir, a.out, image_dir=a.images,
-                            include_images=a.include_images)
+                            include_images=a.include_images, lite=a.lite)
     print(f"Supplement built at {info['root']}")
-    print(f"  {info['n_files']} files, {info['size_mb']:.1f} MB")
+    mode = "lite (per-object figures omitted)" if info.get("lite") else "full"
+    print(f"  {info['n_files']} files, {info['size_mb']:.1f} MB  [{mode}]")
     if info.get("zip"):
         print(f"  archive: {info['zip']}")
+    if not info.get("lite") and info["size_mb"] > 100:
+        print("\n  This is large for sharing or syncing. `--lite` omits the")
+        print("  per-object figures, which regenerate from the records, and is")
+        print("  typically an order of magnitude smaller.")
     return 0
 
 
@@ -318,6 +323,9 @@ def build_parser() -> argparse.ArgumentParser:
     d.add_argument("--images", default=None)
     d.add_argument("--include-images", action="store_true",
                    help="copy the photographs in as well (large)")
+    d.add_argument("--lite", action="store_true",
+                   help="omit per-object figures (~380 MB for 167 objects); "
+                        "they regenerate from the records")
     d.set_defaults(func=cmd_package)
     return p
 

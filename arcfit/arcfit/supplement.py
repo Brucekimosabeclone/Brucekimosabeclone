@@ -62,6 +62,20 @@ the right answer is known in advance.
 """
 
 
+LITE_NOTE = """
+
+## A note on this archive
+
+It was built in **lite mode**: the per-object figures are not included, because
+at roughly 2.3 MB each they would dominate the download.
+
+Nothing is missing. Every per-object figure regenerates from the digitisation
+records in `records/`, together with everything else, using the command in
+step 2 above. The summary figures, all tables, and the complete raw data are
+present.
+"""
+
+
 def _copy(src: Path, dst: Path, ignore=None) -> int:
     if src.is_dir():
         shutil.copytree(src, dst, dirs_exist_ok=True,
@@ -73,8 +87,15 @@ def _copy(src: Path, dst: Path, ignore=None) -> int:
 
 
 def build_supplement(workdir, outdir, image_dir=None, include_images: bool = False,
-                     make_zip: bool = True) -> Dict[str, object]:
-    """Assemble a self-contained supplement directory (and a zip of it)."""
+                     make_zip: bool = True, lite: bool = False) -> Dict[str, object]:
+    """Assemble a self-contained supplement directory (and a zip of it).
+
+    ``lite`` omits the per-object figures, which dominate the size: at roughly
+    2.3 MB each (600 dpi raster plus vector), 167 objects is about 380 MB, and
+    the resulting archive is awkward to share or sync. Nothing is lost by
+    omitting them -- every one regenerates from the digitisation records with a
+    single command, which RUNME and the manifest both state.
+    """
     workdir = Path(workdir)
     root = Path(outdir)
     if root.exists():
@@ -102,7 +123,10 @@ def build_supplement(workdir, outdir, image_dir=None, include_images: bool = Fal
         if (workdir / name).exists():
             _copy(workdir / name, root / name)
     if (workdir / "output").is_dir():
-        _copy(workdir / "output", root / "output")
+        # Per-object figures are excluded in lite mode; everything else in
+        # output/ (tables, summary figures, methods draft, config) is small.
+        _copy(workdir / "output", root / "output",
+              ignore=["objects"] if lite else None)
 
     # A runnable known-answer example, so the supplement can be verified by a
     # reader who will never have the field photographs.
@@ -119,7 +143,10 @@ def build_supplement(workdir, outdir, image_dir=None, include_images: bool = Fal
     if include_images and image_dir:
         _copy(Path(image_dir), root / "images")
 
-    (root / "RUNME.md").write_text(RUNME)
+    runme = RUNME
+    if lite:
+        runme += LITE_NOTE
+    (root / "RUNME.md").write_text(runme)
 
     # Freeze the environment that actually produced these numbers.
     try:
@@ -139,6 +166,14 @@ def build_supplement(workdir, outdir, image_dir=None, include_images: bool = Fal
 
     files = sorted(p for p in root.rglob("*") if p.is_file())
     lines = ["# SHA256 checksums of every file in this supplement", ""]
+    if lite:
+        lines[1:1] = [
+            "# Built in lite mode: the per-object figures are not included.",
+            "# Regenerate all of them from the records with:",
+            "#     arcfit analyze --workdir . --measurements measurements.csv \\",
+            "#                    --outdir output_regenerated",
+            "",
+        ]
     total = 0
     for p in files:
         if p.name == "MANIFEST.txt":
@@ -152,6 +187,7 @@ def build_supplement(workdir, outdir, image_dir=None, include_images: bool = Fal
         "root": root,
         "n_files": len(files) + 1,
         "size_mb": total / 1e6,
+        "lite": lite,
     }
     if make_zip:
         archive = shutil.make_archive(str(root), "zip", root_dir=root)

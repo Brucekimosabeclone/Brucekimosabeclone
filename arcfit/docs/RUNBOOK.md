@@ -356,19 +356,66 @@ arcfit analyze --workdir C:\manos\work_repeat --outdir C:\manos\work_repeat\outp
 
 Compare `major_axis_cm` between the two `results.csv` files on the shared ids.
 
-## Step 12 — Package the supplement
+## Step 12 — Package the supplement and share it
 
 ```powershell
-arcfit package --workdir C:\manos\work --out C:\manos\supplement
+arcfit package --workdir C:\manos\work --out C:\manos\supplement --lite
 ```
 
-Produces `C:\manos\supplement\` plus a zip: code, pinned dependency versions, the
-raw digitisation records, the caliper sheet, results, figures, a runnable
-synthetic demo with known answers, and a SHA256 manifest of every file.
+`--lite` is the right default for sharing. The per-object figures are about
+2.3 MB each as 600 dpi raster plus vector, so for 167 objects they are roughly
+**380 MB** on their own and would dominate a download that is otherwise around
+10 MB. Nothing is lost: every one of them regenerates from the digitisation
+records with a single command, which is written into the archive's `RUNME.md`
+and repeated in its checksum manifest.
 
-`--include-images` adds the photographs and makes it very large. Most journals
-would rather have the records, since the entire analysis regenerates from those
-without the images.
+Drop `--lite` when you want the complete archive — for your own backup, or for
+a repository with no practical size limit. The command prints which mode it
+used and the resulting size, and warns if a full build is large enough to be
+awkward.
+
+What ends up in the archive either way: the code with pinned dependency
+versions, all digitisation records, the caliper sheet, `table_s1.csv` and the
+full results, the data dictionary, the drafted methods text, the summary
+figures, a runnable synthetic demo with known answers, and a SHA256 manifest of
+every file.
+
+### Sharing it with co-authors
+
+Copy the finished zip into your synced folder — do not build it there:
+
+```powershell
+Copy-Item C:\manos\supplement.zip "$env:USERPROFILE\Dropbox\manos_supplement.zip"
+```
+
+Building directly into a synced folder means the sync client is uploading files
+while the packager is still writing them, which produces conflicted copies and
+occasionally a corrupt archive. Build on local disk, then copy the finished
+file across.
+
+Then right-click the file in Dropbox or Drive and copy a share link. At roughly
+10 MB the lite archive sends by email in most cases too.
+
+A co-author who wants the per-object figures runs, after unzipping:
+
+```powershell
+arcfit analyze --workdir . --measurements measurements.csv --outdir output_regenerated
+```
+
+which rebuilds every figure and every table from the records, without needing
+the original photographs.
+
+### What to hand the journal
+
+- **Table S1** — `output\table_s1.csv`: object id, major axis, minor axis and
+  eccentricity, each with its 95% confidence interval, plus the
+  circular/elliptical call and reliability tier. `results.xlsx` opens on this
+  sheet, with the full 51-column table and the data dictionary behind it.
+- **Figures** — `output\figures\`, each as 600 dpi PNG and vector PDF, with
+  the CSV of its own source data alongside.
+- **Methods** — `output\METHODS_DRAFT.md`, generated from this run's own
+  numbers so the prose cannot drift from the table.
+- **The supplement archive** itself, or a link to it.
 
 ---
 

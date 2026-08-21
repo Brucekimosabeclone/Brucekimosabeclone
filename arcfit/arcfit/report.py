@@ -12,8 +12,21 @@ from typing import Dict, Iterable, List, Optional, Sequence
 
 import numpy as np
 
-__all__ = ["DATA_DICTIONARY", "results_table", "write_tables", "methods_text",
-           "summary_counts"]
+__all__ = ["DATA_DICTIONARY", "SLIM_COLUMNS", "results_table", "write_tables",
+           "methods_text", "summary_counts"]
+
+
+# The article's table: the measurements that were actually asked for, each with
+# its interval, plus the shape call and how far it can be trusted. The full
+# table keeps every diagnostic alongside it -- this is a view, not a
+# replacement, so nothing is discarded by having it.
+SLIM_COLUMNS = [
+    "object_id",
+    "major_axis_cm", "major_axis_lo", "major_axis_hi",
+    "minor_axis_cm", "minor_axis_lo", "minor_axis_hi",
+    "eccentricity", "eccentricity_lo", "eccentricity_hi",
+    "shape_class", "tier",
+]
 
 
 DATA_DICTIONARY: List[Dict[str, str]] = [
@@ -111,6 +124,11 @@ def write_tables(df, outdir, typology=None, truth=None, study=None,
     written = [outdir / "results.csv"]
     df.to_csv(written[0], index=False)
 
+    slim = df[[c for c in SLIM_COLUMNS if c in df.columns]].copy()
+    slim_path = outdir / "table_s1.csv"
+    slim.to_csv(slim_path, index=False)
+    written.append(slim_path)
+
     dd = pd.DataFrame(
         [{"column": c, "units": u, "description": d} for c, u, d in DATA_DICTIONARY]
     )
@@ -128,7 +146,9 @@ def write_tables(df, outdir, typology=None, truth=None, study=None,
         try:
             xlsx = outdir / "results.xlsx"
             with pd.ExcelWriter(xlsx, engine="openpyxl") as xl:
-                df.to_excel(xl, sheet_name="results", index=False)
+                # Table S1 first: it is the one a reader opens the file for.
+                slim.to_excel(xl, sheet_name="Table S1", index=False)
+                df.to_excel(xl, sheet_name="results_full", index=False)
                 dd.to_excel(xl, sheet_name="data_dictionary", index=False)
                 if typology is not None:
                     pd.DataFrame([typology.to_dict()]).T.reset_index().rename(

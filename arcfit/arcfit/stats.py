@@ -215,40 +215,48 @@ def circularity_test(x: np.ndarray, y: np.ndarray, ell: EllipseParams,
 
     # --- parametric bootstrap under a true-circle null ---
     #
-    # The null geometry is the fitted circle. Its *noise level* is the awkward
-    # part, because it is a nuisance parameter and the two obvious estimates
-    # disagree exactly when it matters.
+    # The null geometry is the fitted circle. Its *noise level* is a nuisance
+    # parameter, and choosing an estimator for it is the subtlest decision here.
     #
-    # Using the circle residuals is the textbook restricted bootstrap and gives
-    # essentially exact size, but on a genuinely oval object those residuals are
-    # dominated by systematic lack of fit. Feeding that back in as noise widens
-    # the null by as much as the signal being tested for, and power collapses.
-    # Using the ellipse residuals instead fixes the power but comes out mildly
-    # anti-conservative -- the wrong direction here, since a false rejection
-    # means calling a circular object oval, the exact error this whole approach
-    # exists to avoid.
+    # It must come from the ellipse residuals alone. The ellipse contains the
+    # circle as a special case, so its residual variance estimates sigma^2
+    # without bias whether or not the object is really circular. The circle's
+    # residuals only do so under the null: on a genuinely oval object they are
+    # dominated by systematic lack of fit, and that lack of fit *is* the signal
+    # being tested for. Mixing any of it into the null noise therefore cancels
+    # the very thing the test is looking for.
+    #
+    # An earlier version pooled the two variances, which looked like a
+    # reasonable compromise on size but failed selectively where it matters.
+    # Measured on ten real fits, pooled sigma divided by true sigma:
+    #
+    #     fitted e <= 0.50   ->  1.0x     (harmless; the two agree)
+    #     fitted e ~  0.85   ->  1.5-2.3x (null far too wide)
+    #
+    # Only elongated objects were affected, so the more oval an object actually
+    # was, the harder the test found it to detect -- objects at e = 0.80 and
+    # 0.86 with confidence intervals nowhere near circular were being returned
+    # as "indeterminate", contradicting their own intervals.
     #
     # Measured over 300 replicates (2 se = 0.025), nominal size 0.05:
     #
     #                       size 140deg   size 180deg   power(e=.6,150deg)
     #   circle residuals       0.050         0.047            0.45
-    #   ellipse residuals      0.073         0.063            1.00
-    #   pooled (used here)     0.063         0.063            0.84
+    #   pooled                 0.063         0.063            0.84
+    #   ellipse residuals      0.073         0.063            1.00   <- used
     #
-    # So the scale is pooled across both estimates while the *shape* of the
-    # residual distribution is taken from the ellipse fit, which preserves any
-    # non-normality. That keeps size within Monte Carlo error of nominal and
-    # recovers most of the power.
+    # Size runs slightly above nominal, and that is the accepted cost. A modest
+    # excess of false "elliptical" calls stays visible and correctable through
+    # the reported p-value; systematically failing to detect real ovals does
+    # not, and would silently weaken the study's main comparison.
     ang = np.arctan2(y - circ.cy, x - circ.cx)
     resid_e = foot_frame(ell, x, y)["residual"]
 
-    var_c = float(np.sum((r_circ - r_circ.mean()) ** 2) / max(n - _N_CIRCLE_PARAMS, 1))
-    var_e = float(np.sum((resid_e - resid_e.mean()) ** 2) / max(n - _N_ELLIPSE_PARAMS, 1))
-    sigma = np.sqrt(max(0.5 * (var_c + var_e), 0.0))
-
     resid_c = resid_e - resid_e.mean()
-    spread = float(np.std(resid_c))
-    resid_c = resid_c / spread * sigma if spread > 1e-12 else resid_c
+    if n > _N_ELLIPSE_PARAMS:
+        # Fitted residuals understate the true errors, having already absorbed
+        # p degrees of freedom.
+        resid_c = resid_c * np.sqrt(n / (n - _N_ELLIPSE_PARAMS))
 
     draws = rng.choice(resid_c, size=(n_boot, n), replace=True)
     rad = circ.r + draws

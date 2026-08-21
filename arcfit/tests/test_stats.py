@@ -77,15 +77,21 @@ class TestCircularityTestCalibration:
 
     @pytest.mark.slow
     @pytest.mark.parametrize("e_true,coverage,sigma,floor", [
+        (0.8, 150.0, 0.15, 0.80),   # regression: the regime that failed
+        (0.8, 130.0, 0.15, 0.70),   # regression: shorter arc, still elongated
         (0.8, 200.0, 0.06, 0.85),
         (0.6, 150.0, 0.10, 0.60),
     ])
     def test_has_power_against_genuinely_oval_objects(self, e_true, coverage, sigma, floor):
         """Power matters as much as size: a test that never rejects is useless.
 
-        The null's noise level is pooled across the circle and ellipse fits
-        precisely to keep this from collapsing -- drawing it from the circle
-        residuals alone would count that model's own lack of fit as noise.
+        The first two cases are a regression guard. An earlier version pooled the
+        null's noise estimate across the circle and ellipse fits, which inflated
+        it by up to 2.3x on strongly elongated objects -- because the circle's
+        residuals there are mostly its own lack of fit, which is the signal.
+        Power collapsed for exactly the objects the study cares about, and only
+        for those, so the fault was invisible at moderate eccentricity or on a
+        long arc. Both earlier power cases passed throughout.
         """
         p = []
         for seed in range(40):
@@ -94,6 +100,45 @@ class TestCircularityTestCalibration:
             if np.isfinite(fit.p_bootstrap):
                 p.append(fit.p_bootstrap)
         assert np.mean(np.asarray(p) < 0.05) > floor
+
+    def test_null_noise_is_not_inflated_by_the_signal(self):
+        """Localises the fault directly, rather than via its effect on power.
+
+        The null models a *circle*, so the eccentricity it produces must depend
+        on arc coverage and noise -- not on how elongated the observed object
+        happens to be. If a strongly oval object yields a much wider null than a
+        near-circular one measured at the same coverage and noise, the object's
+        own shape is leaking into its null.
+        """
+        circ_like = analyse_points(*sample(0.15, 150.0, sigma=0.10, seed=11)[0].T,
+                                   n_boot=400, seed=1)
+        oval = analyse_points(*sample(0.85, 150.0, sigma=0.10, seed=11)[0].T,
+                              n_boot=400, seed=1)
+        assert np.isfinite(circ_like.null_e_median) and np.isfinite(oval.null_e_median)
+        assert oval.null_e_median < circ_like.null_e_median + 0.20, (
+            f"null for an oval object ({oval.null_e_median:.3f}) is far wider than "
+            f"for a near-circular one ({circ_like.null_e_median:.3f}) at the same "
+            "coverage and noise; the signal is leaking into the null"
+        )
+
+    def test_classification_agrees_with_its_own_interval(self):
+        """A tight interval far from circular must not come back indeterminate.
+
+        This coherence property is what exposed the pooled-noise fault on real
+        output: objects at e = 0.80 and 0.86, with intervals nowhere near a
+        circle, were reported as indeterminate -- the p-value contradicting the
+        confidence interval computed from the same data.
+        """
+        for seed in (3, 17, 42):
+            pts, _ = sample(0.85, 150.0, sigma=0.10, seed=seed)
+            fit = analyse_points(pts[:, 0], pts[:, 1], n_boot=400, seed=seed)
+            if not fit.fit_ok or not np.isfinite(fit.eccentricity_lo):
+                continue
+            if fit.eccentricity_lo > 0.6:
+                assert fit.shape_class == "elliptical", (
+                    f"e = {fit.eccentricity:.3f} with a 95% interval starting at "
+                    f"{fit.eccentricity_lo:.3f} was classified {fit.shape_class}"
+                )
 
     def test_null_median_is_reported_for_transparency(self):
         pts, _ = sample(0.0, 140.0, seed=3)
