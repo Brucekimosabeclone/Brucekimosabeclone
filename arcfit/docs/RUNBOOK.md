@@ -79,13 +79,39 @@ distinguishable after the fact.
 
 ## Sending sample photographs for a detection check
 
-The scale-card detector was developed against rendered scenes. Its first
-contact with real sand, dry grass, cast shadow and genuine camera obliquity is
-the real test, and a handful of photographs is enough to run it.
+The scale-card detector was developed against rendered scenes. Its first contact
+with real sand, dry grass, cast shadow and genuine camera obliquity is the real
+test, and a handful of photographs is enough to run it.
 
-Put **5–8 JPEGs in a private GitHub repository** — not your public profile repo
-— and tell me the repo name. Pick ones that span the range rather than the best
-of the batch:
+### Do not drag them onto github.com
+
+The browser upload on github.com has a far lower per-file size limit than
+`git push` does. Your ~15 MB photographs will be refused there and go through
+git without complaint. Use the commands below.
+
+### 1. Make shareable copies
+
+```powershell
+arcfit prep-samples --images C:\manos\photos --out C:\manos\samples --n 8
+```
+
+This keeps the **full pixel dimensions** and only lowers the JPEG quality, so
+the scale card still subtends exactly as many pixels as it did originally —
+which is the one thing the detection test depends on. Downscaling would defeat
+the purpose. Measured across test scenes, the default quality moves the
+recovered scale by at most 0.12% while roughly halving file size; real camera
+JPEGs shrink considerably more than that.
+
+It prints a before/after table so you can see what happened. Originals are never
+touched.
+
+To choose specific photographs instead of an even spread across the folder:
+
+```powershell
+arcfit prep-samples --images C:\manos\photos --out C:\manos\samples --names IMG_5443.JPG,IMG_5465.JPG,IMG_5501.JPG
+```
+
+Pick ones that span the range rather than the best of the batch:
 
 - one where the card sits clearly on open sand
 - one of the most oblique shots you have
@@ -93,14 +119,36 @@ of the batch:
 - one with dry grass or clutter across the frame
 - one where the object is unusually close to, or far from, the card
 
-Why private matters: a public repo publishes unpublished field data
-permanently, and field photographs routinely carry GPS coordinates in their
-EXIF that point straight at the site.
+### 2. Push them to a private repo
 
-`arcfit` itself never reads or stores location data — it takes only the
-35mm-equivalent focal length from EXIF and keeps just the derived tilt and
-camera height — so the JSON records under `records\` are safe to share even
-where the photographs are not.
+Create an **empty private repository** on github.com first — no README. Then run
+these one line at a time:
+
+```powershell
+cd C:\manos\samples
+git init
+git add .
+git commit -m "sample photographs for detection check"
+git branch -M main
+git remote add origin https://github.com/<you>/<private-repo>.git
+git push -u origin main
+```
+
+Then tell me the repository name and I will attach it.
+
+### Why private, and what is in the files
+
+A public repository publishes unpublished field data permanently, and field
+photographs routinely carry GPS coordinates in their EXIF pointing straight at
+the site. Your profile repo is public, so it is the wrong home for these.
+
+`prep-samples` keeps only the focal length and orientation tags and **removes
+GPS from the copies** — the focal length is needed because `arcfit` uses it to
+estimate camera tilt and height. The report tells you whether GPS was found and
+dropped. Pass `--keep-exif` to preserve everything instead.
+
+`arcfit` itself never reads or stores location data, so the JSON records under
+`records\` are safe to share even where the photographs are not.
 
 ---
 

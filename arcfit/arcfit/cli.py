@@ -224,6 +224,35 @@ def cmd_check_measurements(a) -> int:
     return 0 if rep.ok else 1
 
 
+def cmd_prep_samples(a) -> int:
+    from .samples import prepare_samples
+
+    names = [x for x in (a.names or "").split(",") if x.strip()] or None
+    rep = prepare_samples(a.images, a.out, n=a.n, quality=a.quality,
+                          names=names, keep_exif=a.keep_exif)
+    if not rep.rows:
+        print("Nothing prepared.", file=sys.stderr)
+        if rep.missing:
+            print("None of the named files were found: "
+                  + ", ".join(rep.missing), file=sys.stderr)
+        return 1
+
+    print(rep.summary())
+    print(f"\nWritten to {Path(a.out).resolve()}")
+    print("\nTo push these to a NEW PRIVATE repo, run one line at a time:")
+    print("  (create the empty private repo on github.com first)")
+    print(f"  cd {a.out}")
+    print("  git init")
+    print("  git add .")
+    print('  git commit -m "sample photographs for detection check"')
+    print("  git branch -M main")
+    print("  git remote add origin https://github.com/<you>/<private-repo>.git")
+    print("  git push -u origin main")
+    print("\nDo not drag these onto github.com in a browser -- the browser "
+          "upload has a much\nlower size limit than git push does.")
+    return 0
+
+
 def cmd_package(a) -> int:
     from .supplement import build_supplement
 
@@ -316,6 +345,20 @@ def build_parser() -> argparse.ArgumentParser:
     d.add_argument("--measurements", required=True)
     d.add_argument("--workdir", default=None)
     d.set_defaults(func=cmd_check_measurements)
+
+    d = sub.add_parser("prep-samples",
+                       help="make smaller shareable copies of a few photographs")
+    d.add_argument("--images", required=True)
+    d.add_argument("--out", default="samples")
+    d.add_argument("--n", type=int, default=8,
+                   help="how many to take, spread across the folder (default: 8)")
+    d.add_argument("--quality", type=int, default=92,
+                   help="JPEG quality 1-100; resolution is never changed (default: 92)")
+    d.add_argument("--names", default=None,
+                   help="comma-separated filenames to use instead of --n")
+    d.add_argument("--keep-exif", action="store_true",
+                   help="keep all EXIF, INCLUDING any GPS coordinates")
+    d.set_defaults(func=cmd_prep_samples)
 
     d = sub.add_parser("package", help="assemble the journal supplement")
     d.add_argument("--workdir", required=True)
