@@ -136,6 +136,36 @@ git push -u origin main
 
 Then tell me the repository name and I will attach it.
 
+### If git asks for a password
+
+Your first `git push` from a machine will ask for credentials. Cloning a public
+repo does not, so this may be the first time you see it.
+
+**GitHub has not accepted account passwords since 2021.** Typing your GitHub
+password will fail with an authentication error that does not explain why.
+
+Git for Windows ships Git Credential Manager, which normally opens a browser
+window for you to sign in to GitHub. Do that, and it remembers the credentials
+for every later push. If it does not appear, use a token instead:
+
+1. github.com → Settings → Developer settings → Personal access tokens →
+   Tokens (classic) → Generate new token
+2. Tick the **`repo`** scope. Copy the token — it is shown once.
+3. When git prompts, give your GitHub username as the username and paste the
+   **token as the password**.
+
+### Letting Claude see the repository
+
+Pushing successfully is not the same as Claude being able to read it. The Claude
+GitHub App has its own list of repositories it may access, and a newly created
+private repo is not on that list if the installation is scoped to selected
+repositories rather than all of them.
+
+The symptom is specific and otherwise baffling: your push succeeds, the files
+are visible on github.com, and Claude still reports the repository as
+inaccessible. If that happens, add the new repository to the App's allowed set
+in your Claude GitHub settings, then ask Claude to try again.
+
 ### Why private, and what is in the files
 
 A public repository publishes unpublished field data permanently, and field
