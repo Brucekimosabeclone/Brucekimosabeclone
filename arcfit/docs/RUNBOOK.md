@@ -34,6 +34,76 @@ systematic error only after step 8.
 
 ---
 
+## Already installed? Updating to the latest version
+
+Do this first if you set `arcfit` up previously. Run the lines one at a time.
+
+```powershell
+cd C:\manos\code
+git pull
+cd arcfit
+.venv\Scripts\activate
+pip install -e .
+arcfit --version
+```
+
+You want **1.1.0 or later**. If it still says 1.0.0, the `pip install -e .` did
+not take — check the virtualenv is active.
+
+`pip install -e .` is needed even though the install is editable: the `arcfit`
+console script is re-linked by it, and skipping it can leave you running the old
+entry point.
+
+### What changed, and whether it affects you
+
+Version 1.1.0 fixes how the circular-versus-oval test builds its reference
+distribution. Objects with a strongly elongated fit — around e = 0.8 and above —
+could be reported `indeterminate` when their own confidence interval was nowhere
+near circular. Those objects now come back `elliptical`. Near-circular objects
+are unaffected.
+
+**You do not need to re-digitise anything.** The fault was in analysis, not in
+the digitised points, and your records are unchanged. Re-run the analysis over
+the work you already have:
+
+```powershell
+arcfit analyze --workdir C:\manos\work --images C:\manos\photos --measurements C:\manos\work\measurements.csv --outdir C:\manos\work\output
+```
+
+Every table and figure regenerates from the records. If you have results
+produced with 1.0.0, discard them and use these — each record carries the
+version that wrote it in its `arcfit_version` field, so the two are
+distinguishable after the fact.
+
+---
+
+## Sending sample photographs for a detection check
+
+The scale-card detector was developed against rendered scenes. Its first
+contact with real sand, dry grass, cast shadow and genuine camera obliquity is
+the real test, and a handful of photographs is enough to run it.
+
+Put **5–8 JPEGs in a private GitHub repository** — not your public profile repo
+— and tell me the repo name. Pick ones that span the range rather than the best
+of the batch:
+
+- one where the card sits clearly on open sand
+- one of the most oblique shots you have
+- one with the card partly in shadow, or shadow across the object
+- one with dry grass or clutter across the frame
+- one where the object is unusually close to, or far from, the card
+
+Why private matters: a public repo publishes unpublished field data
+permanently, and field photographs routinely carry GPS coordinates in their
+EXIF that point straight at the site.
+
+`arcfit` itself never reads or stores location data — it takes only the
+35mm-equivalent focal length from EXIF and keeps just the derived tilt and
+camera height — so the JSON records under `records\` are safe to share even
+where the photographs are not.
+
+---
+
 ## Step 0 — Prerequisites
 
 Install **Python from python.org**, 3.9 or newer. On the first installer screen
