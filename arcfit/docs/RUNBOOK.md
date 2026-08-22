@@ -3,6 +3,9 @@
 A start-to-finish operational guide for the real run, on Windows, with the
 photographs downloaded from Dropbox as a ZIP.
 
+> Already know why each step is there and just want the commands?
+> **`QUICKSTART.md`** is the same sequence with the reasoning stripped out.
+
 `README.md` explains what the tool does and why; `USER_GUIDE.md` covers
 digitising technique. This covers the order to do things in, so that a mistake
 surfaces in ten minutes rather than after seven hours of clicking.
