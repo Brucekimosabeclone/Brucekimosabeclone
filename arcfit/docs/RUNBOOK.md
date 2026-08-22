@@ -10,9 +10,13 @@ photographs downloaded from Dropbox as a ZIP.
 digitising technique. This covers the order to do things in, so that a mistake
 surfaces in ten minutes rather than after seven hours of clicking.
 
-**Assumed here:** scale card 10 × 2 cm, 1 cm squares in 2 rows. That is the
+**Assumed here:** scale card **10 × 4 cm** — two rows of ten 1 cm squares and
+one row of five 2 cm squares, given as `--card-layout 1x10,1x10,2x5`, measured
+across the checkered block rather than the white border. The package *default*
+is a uniform 10 × 2 cm card, which is
 tool's default, so no card flags appear in any command below. If your card
-differs, add `--card-width --card-height --card-cols --card-rows` to *every*
+differs again, add `--card-layout` (or `--card-width --card-height
+--card-cols --card-rows` for a uniform card) to *every*
 command — see step 4.
 
 ---
@@ -394,9 +398,9 @@ arcfit analyze --workdir C:\manos\work_sample --images C:\manos\sample --measure
 
 1. **Card scale.** Open any figure in `output\figures\objects\`. Panel *b* is
    drawn in real centimetre axes, and the scale card is visible in it. Its long
-   side must measure **10 cm** against the axis ticks and its short side **2 cm**.
+   side must measure **10 cm** against the axis ticks and its short side **4 cm**.
    If the short side reads 1 cm, stop: your card is single-row, and every
-   command from here needs `--card-height 1 --card-rows 1`.
+   command from here needs a corrected `--card-layout`.
 2. **Caliper agreement.** The console prints `bias ... cm (...%)`. A few percent
    is expected. Tens of percent points at a calibration problem, card geometry
    first.

@@ -137,12 +137,62 @@ def two_point_scale(p1: Sequence[float], p2: Sequence[float],
 # camera geometry
 # --------------------------------------------------------------------------
 
+def _f35_from_tags(tags) -> Optional[float]:
+    """35mm-equivalent focal length from EXIF tags, or None.
+
+    ``FocalLengthIn35mmFilm`` is preferred because it encodes focal length and
+    sensor size together. Plenty of cameras never write it -- Canon DSLRs among
+    them -- but do write the focal-plane resolution, from which the sensor width
+    follows directly. Without this fallback such a camera looks uncalibratable
+    and every check that needs K is silently skipped.
+    """
+    f35 = tags.get("FocalLengthIn35mmFilm")
+    if f35:
+        try:
+            value = float(f35)
+        except (TypeError, ValueError):
+            value = 0.0
+        if value > 0:
+            return value
+
+    focal_mm = tags.get("FocalLength")
+    x_res = tags.get("FocalPlaneXResolution")
+    width_px = tags.get("ExifImageWidth")
+    if not (focal_mm and x_res and width_px):
+        return None
+    try:
+        focal_mm = float(focal_mm)
+        x_res = float(x_res)
+        width_px = float(width_px)
+    except (TypeError, ValueError):
+        return None
+    if focal_mm <= 0 or x_res <= 0 or width_px <= 0:
+        return None
+
+    # FocalPlaneResolutionUnit: 2 = inch, 3 = cm. Inch is the near-universal
+    # choice and the sensible default when the tag is missing.
+    unit = tags.get("FocalPlaneResolutionUnit") or 2
+    try:
+        mm_per_unit = {2: 25.4, 3: 10.0}[int(unit)]
+    except (TypeError, ValueError, KeyError):
+        mm_per_unit = 25.4
+    sensor_width_mm = width_px / x_res * mm_per_unit
+
+    # Refuse to guess from an implausible sensor. Anything outside roughly
+    # phone-sensor to medium-format is a misread tag, and a wrong K is worse
+    # than no K: it produces a confident, wrong tilt.
+    if not 1.0 < sensor_width_mm < 100.0:
+        return None
+    return focal_mm * 36.0 / sensor_width_mm
+
+
 def intrinsics_from_exif(image_path, image_width_px: int,
                          image_height_px: int) -> Optional[np.ndarray]:
     """Approximate camera matrix K from EXIF, or None if unavailable.
 
-    Uses the 35mm-equivalent focal length, which encodes focal length and sensor
-    size together and so avoids needing a sensor database. The principal point
+    Uses the 35mm-equivalent focal length, taken from EXIF directly where the
+    camera records it and otherwise derived from the focal-plane resolution --
+    see ``_f35_from_tags``. The principal point
     is assumed to be the image centre. This is good enough for a tilt estimate
     and a camera-height estimate; it is not a substitute for calibrating the
     camera, and nothing that affects a reported measurement depends on it.
@@ -163,14 +213,8 @@ def intrinsics_from_exif(image_path, image_width_px: int,
     except Exception:
         return None
 
-    f35 = tags.get("FocalLengthIn35mmFilm")
-    if not f35:
-        return None
-    try:
-        f35 = float(f35)
-    except (TypeError, ValueError):
-        return None
-    if f35 <= 0:
+    f35 = _f35_from_tags(tags)
+    if f35 is None:
         return None
 
     # 35mm frame is 36mm wide; scale by the longer image side, which is the one

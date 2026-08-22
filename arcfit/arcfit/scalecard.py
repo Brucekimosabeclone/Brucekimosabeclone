@@ -59,10 +59,26 @@ class CardSpec:
     height_cm: float = 2.0
     cols: int = 10
     rows: int = 2
+    row_spec: Tuple[Tuple[float, int], ...] = ()
 
     @property
     def aspect(self) -> float:
         return self.width_cm / self.height_cm
+
+    @property
+    def row_layout(self) -> Tuple[Tuple[float, int], ...]:
+        """Rows as ``(height_cm, cells_across)``, along the short side.
+
+        ``rows`` and ``cols`` describe a uniform grid, which is all most
+        chequered bars need. Archaeological scales frequently are not uniform --
+        the card used here runs two rows of 1 cm squares against one row of 2 cm
+        squares -- and a single (rows, cols) pair cannot express that. Setting
+        ``row_spec`` overrides them; leaving it empty keeps the uniform grid.
+        """
+        if self.row_spec:
+            return tuple((float(h), int(n)) for h, n in self.row_spec)
+        return tuple((self.height_cm / self.rows, self.cols)
+                     for _ in range(self.rows))
 
     def validate(self) -> None:
         if self.width_cm <= 0 or self.height_cm <= 0:
@@ -71,6 +87,15 @@ class CardSpec:
             raise ValueError("card must have at least 2 columns and 1 row")
         if self.width_cm < self.height_cm:
             raise ValueError("width_cm must be the long side of the card")
+        if self.row_spec:
+            if any(float(h) <= 0 or int(n) < 2 for h, n in self.row_spec):
+                raise ValueError(
+                    "each card row needs a positive height and at least 2 cells")
+            total = sum(float(h) for h, _ in self.row_spec)
+            if abs(total - self.height_cm) > 1e-6:
+                raise ValueError(
+                    f"card row heights sum to {total:g} cm, but height_cm is "
+                    f"{self.height_cm:g} cm")
 
 
 @dataclass
@@ -141,49 +166,79 @@ def _rectify_patch(gray: np.ndarray, quad: np.ndarray, spec: CardSpec,
 
 
 def _checkerboard_score(patch: np.ndarray, spec: CardSpec) -> float:
-    """How well a rectified patch matches an alternating-square pattern.
+    """How well a rectified patch matches the card's printed pattern.
 
-    Returns 0..1. The patch is reduced to one mean value per expected square and
-    correlated against both phases of the ideal checkerboard; the better phase
-    wins, since which square is black is arbitrary.
+    Returns 0..1. Each row is reduced to one mean value per expected cell and
+    correlated against both phases of an alternating run; the better phase wins,
+    since which cell is black is arbitrary.
+
+    Scoring runs per row rather than over the whole grid because rows may differ
+    in cell size, so there is no single lattice to correlate against. That also
+    drops the requirement that neighbouring rows be offset from one another --
+    on this card they are not, and demanding it rejected the genuine article.
+    Ten alternating cells in each of several rows remains far beyond what a rock
+    or a shadow produces.
+
+    The layout is tried both ways up: nothing constrains which end of the card
+    faces the camera, and the corner ordering is chosen from image geometry.
     """
     if patch is None or patch.size == 0:
         return 0.0
     h, w = patch.shape[:2]
-    ys = np.linspace(0, h, spec.rows + 1).astype(int)
-    xs = np.linspace(0, w, spec.cols + 1).astype(int)
-
-    cells = np.zeros((spec.rows, spec.cols), float)
-    for r in range(spec.rows):
-        for c in range(spec.cols):
-            # Trim a margin so a slightly misplaced corner does not bleed
-            # neighbouring squares into the sample.
-            y0, y1 = ys[r], ys[r + 1]
-            x0, x1 = xs[c], xs[c + 1]
-            my, mx = max(1, (y1 - y0) // 4), max(1, (x1 - x0) // 4)
-            block = patch[y0 + my:max(y0 + my + 1, y1 - my),
-                          x0 + mx:max(x0 + mx + 1, x1 - mx)]
-            cells[r, c] = float(block.mean()) if block.size else 0.0
-
-    spread = cells.max() - cells.min()
-    if spread < 18.0:      # a flat region cannot be a checkerboard
+    if h < 2 or w < 2:
         return 0.0
-    norm = (cells - cells.mean()) / (cells.std() + 1e-9)
+    if float(patch.max()) - float(patch.min()) < 18.0:
+        return 0.0      # a flat region cannot be a checkerboard
 
-    rr, cc = np.meshgrid(np.arange(spec.rows), np.arange(spec.cols), indexing="ij")
-    ideal = np.where((rr + cc) % 2 == 0, 1.0, -1.0)
+    layout = spec.row_layout
+    total_cm = sum(height for height, _ in layout)
+    if total_cm <= 0:
+        return 0.0
 
-    # Score on sign agreement rather than correlation magnitude. Foreshortening
-    # and blur compress the contrast between squares without reordering them, so
-    # a magnitude-based correlation reads an oblique but perfectly good card as a
-    # failure -- and every photograph here is oblique. Sign agreement survives
-    # that, while still collapsing to chance on anything that is not a
-    # checkerboard.
-    best = 0.0
-    for phase in (ideal, -ideal):
-        agree = float(np.mean(np.sign(norm) == np.sign(phase)))
-        best = max(best, agree)
-    return float(np.clip(2.0 * (best - 0.5), 0.0, 1.0))
+    def score(rows: Tuple[Tuple[float, int], ...]) -> float:
+        edges, acc = [0.0], 0.0
+        for height, _ in rows:
+            acc += height
+            edges.append(acc / total_cm)
+
+        weighted, weight = 0.0, 0.0
+        for r, (_, n_cells) in enumerate(rows):
+            y0, y1 = int(edges[r] * h), int(edges[r + 1] * h)
+            if y1 - y0 < 2 or n_cells < 2:
+                continue
+            xs = np.linspace(0, w, n_cells + 1).astype(int)
+
+            values = np.zeros(n_cells, float)
+            for c in range(n_cells):
+                # Trim a margin so a slightly misplaced corner does not bleed
+                # neighbouring cells into the sample.
+                x0, x1 = xs[c], xs[c + 1]
+                my, mx = max(1, (y1 - y0) // 4), max(1, (x1 - x0) // 4)
+                block = patch[y0 + my:max(y0 + my + 1, y1 - my),
+                              x0 + mx:max(x0 + mx + 1, x1 - mx)]
+                values[c] = float(block.mean()) if block.size else 0.0
+
+            if values.max() - values.min() < 18.0:
+                continue        # a uniform row carries no evidence either way
+            norm = (values - values.mean()) / (values.std() + 1e-9)
+
+            # Score on sign agreement rather than correlation magnitude.
+            # Foreshortening and blur compress the contrast between cells
+            # without reordering them, so a magnitude-based correlation reads an
+            # oblique but perfectly good card as a failure -- and every
+            # photograph here is oblique. Sign agreement survives that, while
+            # still collapsing to chance on anything that is not a checkerboard.
+            ideal = np.where(np.arange(n_cells) % 2 == 0, 1.0, -1.0)
+            best = 0.0
+            for phase in (ideal, -ideal):
+                agree = float(np.mean(np.sign(norm) == np.sign(phase)))
+                best = max(best, agree)
+            weighted += n_cells * float(np.clip(2.0 * (best - 0.5), 0.0, 1.0))
+            weight += n_cells
+
+        return weighted / weight if weight else 0.0
+
+    return max(score(layout), score(tuple(reversed(layout))))
 
 
 def _candidate_quads(gray: np.ndarray, min_area: float, max_area: float) -> List[Tuple[np.ndarray, str]]:
@@ -221,13 +276,17 @@ def _candidate_quads(gray: np.ndarray, min_area: float, max_area: float) -> List
 
 def detect_card(image, spec: CardSpec = CardSpec(), work_width: int = 1600,
                 min_area_frac: float = 2e-4, max_area_frac: float = 0.25,
-                refine: bool = True) -> Optional[CardDetection]:
+                refine: bool = True, min_cell_px: float = 6.0) -> Optional[CardDetection]:
     """Locate the scale card in one photograph.
 
     ``image`` may be a path or a grayscale/BGR array. Detection runs on a
     downscaled copy for speed -- these are 15 MB images -- and the winning
     corners are then refined at full resolution, so precision is not sacrificed
     to that speed-up.
+
+    ``min_cell_px`` is the smallest printed cell, in working-image pixels, that
+    is still worth testing; smaller candidates are discarded unverified rather
+    than scored on noise.
 
     Returns None if nothing verified as a checkerboard. Callers are expected to
     fall back to manual calibration rather than to trust a guess.
@@ -267,13 +326,26 @@ def detect_card(image, spec: CardSpec = CardSpec(), work_width: int = 1600,
             continue
         seen.append(ordered)
 
+        e0 = 0.5 * (np.hypot(*(ordered[1] - ordered[0])) + np.hypot(*(ordered[3] - ordered[2])))
+        e1 = 0.5 * (np.hypot(*(ordered[2] - ordered[1])) + np.hypot(*(ordered[0] - ordered[3])))
+
+        # Refuse candidates too small to verify. The pattern check reduces each
+        # cell to a mean, and below a few pixels per cell those means are noise:
+        # sign agreement then reaches the threshold by chance often enough that
+        # a speck of gravel outscores the card. This is a statement about what
+        # can be checked, not about how the photographer framed the shot, so it
+        # holds regardless of image size.
+        layout = spec.row_layout
+        cell_px_x = e0 / max(max(n for _, n in layout), 1)
+        cell_px_y = e1 * min(h for h, _ in layout) / max(spec.height_cm, 1e-9)
+        if min(cell_px_x, cell_px_y) < min_cell_px:
+            continue
+
         patch = _rectify_patch(small, ordered, spec)
         score = _checkerboard_score(patch, spec)
         if score <= 0.0:
             continue
 
-        e0 = 0.5 * (np.hypot(*(ordered[1] - ordered[0])) + np.hypot(*(ordered[3] - ordered[2])))
-        e1 = 0.5 * (np.hypot(*(ordered[2] - ordered[1])) + np.hypot(*(ordered[0] - ordered[3])))
         aspect = e0 / max(e1, 1e-9)
         aspect_err = abs(np.log(aspect / spec.aspect))
         # Perspective legitimately changes the observed aspect, so this only
@@ -319,13 +391,28 @@ def _interior_corners(gray: np.ndarray, corners_px: np.ndarray, spec: CardSpec,
     Their approximate positions are known in advance from the outer corners, so
     each refinement starts close and only small corrections are accepted.
     """
-    n_x, n_y = spec.cols - 1, spec.rows - 1
-    if n_x < 1 or n_y < 1:
+    # A saddle point needs the colour to change on both sides of the boundary,
+    # so an interior corner exists only where a cell edge in the row above lines
+    # up with one in the row below. On a uniform grid that is every edge; where a
+    # row of 1 cm cells meets a row of 2 cm cells it is only every second one.
+    layout = spec.row_layout
+    if len(layout) < 2:
         return None, None
 
-    model = np.array([[(i + 1) * spec.width_cm / spec.cols,
-                       (j + 1) * spec.height_cm / spec.rows]
-                      for j in range(n_y) for i in range(n_x)], np.float32)
+    model_pts = []
+    y_cm = 0.0
+    for above, below in zip(layout, layout[1:]):
+        y_cm += above[0]
+        n_a, n_b = above[1], below[1]
+        step_a, step_b = spec.width_cm / n_a, spec.width_cm / n_b
+        for i in range(1, n_a):
+            x_cm = i * step_a
+            k = x_cm / step_b
+            if abs(k - round(k)) < 1e-6 and 0 < round(k) < n_b:
+                model_pts.append([x_cm, y_cm])
+    if len(model_pts) < 2:
+        return None, None
+    model = np.array(model_pts, np.float32)
 
     src = np.array([[0.0, 0.0], [spec.width_cm, 0.0],
                     [spec.width_cm, spec.height_cm], [0.0, spec.height_cm]], np.float32)
@@ -337,7 +424,7 @@ def _interior_corners(gray: np.ndarray, corners_px: np.ndarray, spec: CardSpec,
 
     # Search window scaled to one square, so it cannot reach a neighbouring corner.
     edge = np.hypot(*(corners_px[1] - corners_px[0]))
-    square_px = edge / max(spec.cols, 1)
+    square_px = edge / max(max(n for _, n in layout), 1)
     win = int(max(3, min(round(square_px * 0.35), 25)))
     try:
         crit = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 40, 1e-3)

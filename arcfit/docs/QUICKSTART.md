@@ -33,8 +33,16 @@ one square.
 height stretches the rectified plane in one direction and corrupts eccentricity,
 while everything else still looks fine.
 
-Defaults assume **10 × 2 cm with 1 cm squares**. If yours differs, add
-`--card-width --card-height --card-cols --card-rows` to **every** command below.
+The built-in default is a uniform **10 × 2 cm** card of 1 cm squares. The card
+used in this project is **not** that: it is **10 × 4 cm** — two rows of ten 1 cm
+squares against one row of five 2 cm squares. Add
+
+    --card-layout 1x10,1x10,2x5
+
+to **every** command below. Entries are `HEIGHTxCELLS` along the short side, so
+the layout sets the card height too. Measure the **checkered block**, not the
+white border. For a uniform card use `--card-width --card-height --card-cols
+--card-rows` instead.
 
 ## 2. Locate the card in all 167
 

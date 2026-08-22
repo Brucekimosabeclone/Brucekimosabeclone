@@ -29,7 +29,7 @@ import numpy as np
 from .calibrate import Calibration, CalibrationError
 from .fitting import FitError, EllipseParams, fit_circle_algebraic, fit_ellipse
 from .records import ObjectRecord, records_dir, scan_images
-from .scalecard import CardSpec, detect_card
+from .scalecard import CardSpec, detect_card, order_card_corners
 from .snap import gradient_magnitude, snap_points
 
 __all__ = ["DigitizerState", "Digitizer", "run_digitizer", "KEY_HELP"]
@@ -276,8 +276,14 @@ class DigitizerState:
             return False
         try:
             if self.mode == "card_corners":
+                # Order the clicks exactly as detection does. Without this,
+                # starting on a short side transposes the card's width and
+                # height, rescaling every measurement for that object by the
+                # card's aspect ratio with nothing downstream looking wrong.
+                corners = order_card_corners(
+                    np.asarray(self.pending_clicks, float), self.card_spec)
                 self.record.calibration = Calibration.from_rect(
-                    self.pending_clicks, self.card_spec.width_cm,
+                    corners, self.card_spec.width_cm,
                     self.card_spec.height_cm, source="manual",
                     image_path=self.image_path,
                     image_size_px=self.record.image_size_px)
@@ -371,10 +377,28 @@ class Digitizer:
         self._display = None
         self._scale = 1.0
 
+        # Matplotlib binds single letters to its own tools: 'p' pans, 'o'
+        # zooms, 's' saves, 'c' and 'h' walk the view history. Every one of
+        # those collides with a digitiser key, and the pan/zoom pair is worse
+        # than cosmetic -- once a tool is active it swallows every click as
+        # navigation, so pressing 'p' for "previous" leaves a window that
+        # silently refuses to place points. Clear them while this window lives.
+        self._saved_keymap = {k: list(v) for k, v in plt.rcParams.items()
+                              if k.startswith("keymap.")}
+        for key in self._saved_keymap:
+            plt.rcParams[key] = []
+
         self.fig, self.ax = plt.subplots(figsize=(12, 8))
         self.fig.canvas.mpl_connect("button_press_event", self.on_click)
         self.fig.canvas.mpl_connect("key_press_event", self.on_key)
+        self.fig.canvas.mpl_connect("close_event", self._restore_keymap)
         self.load()
+
+    def _restore_keymap(self, _event=None) -> None:
+        """Give matplotlib its shortcuts back when the window closes."""
+        import matplotlib.pyplot as plt
+        for key, value in getattr(self, "_saved_keymap", {}).items():
+            plt.rcParams[key] = value
 
     # -- image handling ------------------------------------------------
     def _load_display_image(self):
@@ -464,6 +488,11 @@ class Digitizer:
             bits.append("card ON OBJECT (not ground)")
         if rec.excluded:
             bits.append("EXCLUDED")
+        toolbar = getattr(self.fig.canvas, "toolbar", None)
+        tool = getattr(toolbar, "mode", "") if toolbar is not None else ""
+        if tool:
+            bits.append(f"{str(tool).upper()} ACTIVE - clicks ignored; press "
+                        f"the same toolbar button again to place points")
         if st.message:
             bits.append(st.message)
         self.ax.set_title("\n".join(bits), fontsize=9, loc="left")
@@ -568,7 +597,13 @@ def run_digitizer(image_dir, workdir, card_spec: Optional[CardSpec] = None,
 
     state = DigitizerState(images, workdir, card_spec or CardSpec(), operator=operator)
     print("Keys: " + ", ".join(f"{k} = {v}" for k, v in KEY_HELP))
-    Digitizer(state, display_max_px=display_max_px)
-    plt.show()
+    digitizer = Digitizer(state, display_max_px=display_max_px)
+    try:
+        plt.show()
+    finally:
+        # The window suppresses matplotlib's own shortcuts while it runs. Hand
+        # them back even if the session ended by exception, so a later plot in
+        # the same interpreter is not left without its keys.
+        digitizer._restore_keymap()
     state.save()
     print(f"Saved records to {records_dir(workdir)}")

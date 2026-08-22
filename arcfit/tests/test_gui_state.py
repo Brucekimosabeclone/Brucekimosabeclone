@@ -9,6 +9,7 @@ import pytest
 
 import cv2
 
+from arcfit.calibrate import apply_homography
 from arcfit.gui import DigitizerState
 from arcfit.records import ObjectRecord
 from arcfit.scalecard import CardSpec
@@ -114,6 +115,46 @@ class TestCalibration:
         assert st.record.calibration.rectified
         assert st.mode == "digitise"
 
+    def test_manual_corners_may_start_on_any_side(self, scene):
+        """The operator must be free to start clicking at any corner.
+
+        Starting on a short side used to transpose the card's width and height,
+        rescaling every measurement for that object by the aspect ratio -- with
+        nothing downstream looking wrong. The guide has always promised the tool
+        works the ordering out itself; only the detection path actually did.
+        """
+        st, truths, _ = scene
+        corners = np.asarray(truths[0].card_corners_px, float)
+
+        def calibrate_from(start: int):
+            st.start_manual_calibration()
+            for x, y in np.roll(corners, -start, axis=0):
+                st.add_calibration_click(float(x), float(y))
+            cal = st.record.calibration
+            assert cal.rectified, f"start={start} failed to calibrate"
+            return np.asarray(cal.H, float)
+
+        # Probe with a true circle lying in the card's plane but away from the
+        # card itself. The card's own corners cannot reveal a transposition:
+        # the homography is built from the declared numbers and so reproduces
+        # them whichever way round they went in. Only an independent shape
+        # shows it, and a circle turning oval is the failure that matters here.
+        ref = calibrate_from(0)
+        t = np.linspace(0.0, 2.0 * np.pi, 180, endpoint=False)
+        circle_cm = np.column_stack([5.0 + 2.0 * np.cos(t), 1.0 + 2.0 * np.sin(t)])
+        circle_px = apply_homography(np.linalg.inv(ref), circle_cm)
+
+        def axis_ratio(pts: np.ndarray) -> float:
+            pts = pts - pts.mean(axis=0)
+            sv = np.linalg.svd(pts, compute_uv=False)
+            return float(sv[0] / sv[1])
+
+        for start in range(4):
+            H = calibrate_from(start)
+            got = axis_ratio(apply_homography(H, circle_px))
+            assert got == pytest.approx(1.0, abs=0.02), (
+                f"start={start}: a true circle rectified to axis ratio {got:.3f}")
+
     def test_two_point_fallback_is_marked_unrectified(self, scene):
         st, _, _ = scene
         st.start_two_point(10.0)
@@ -194,3 +235,60 @@ class TestPreviewAndStatus:
         st.go_to(0)
         assert st.next_undigitised()
         assert st.index == 1
+
+
+class TestWindowKeymap:
+    """Matplotlib's own shortcuts must not fight the digitiser's.
+
+    Matplotlib binds single letters to its tools -- 'p' pans, 'o' zooms, 's'
+    saves, 'c' and 'h' walk the view history. An active pan or zoom tool then
+    swallows every click as navigation, so pressing 'p' for "previous object"
+    left a window that silently refused to place points and looked broken.
+    """
+
+    def _digitizer(self, scene):
+        import matplotlib
+        matplotlib.use("Agg")
+        from arcfit.gui import Digitizer
+        st, _, _ = scene
+        return Digitizer(st, auto_detect=False)
+
+    def test_conflicting_shortcuts_are_cleared(self, scene):
+        import matplotlib.pyplot as plt
+        dig = self._digitizer(scene)
+        try:
+            for key in ("keymap.pan", "keymap.zoom", "keymap.save",
+                        "keymap.back", "keymap.home", "keymap.grid"):
+                assert plt.rcParams[key] == [], f"{key} still bound"
+        finally:
+            dig._restore_keymap()
+            plt.close(dig.fig)
+
+    def test_shortcuts_come_back_afterwards(self, scene):
+        """A digitising session must not leave the interpreter altered."""
+        import matplotlib.pyplot as plt
+        before = {k: list(v) for k, v in plt.rcParams.items()
+                  if k.startswith("keymap.")}
+        dig = self._digitizer(scene)
+        dig._restore_keymap()
+        plt.close(dig.fig)
+        after = {k: list(v) for k, v in plt.rcParams.items()
+                 if k.startswith("keymap.")}
+        assert after == before
+
+    def test_no_digitiser_key_reaches_a_matplotlib_tool(self, scene):
+        """The invariant, so a newly added key cannot reintroduce the clash."""
+        import matplotlib.pyplot as plt
+        from arcfit.gui import KEY_HELP
+        dig = self._digitizer(scene)
+        try:
+            ours = {part.strip() for label, _ in KEY_HELP
+                    for part in label.split("/") if len(part.strip()) == 1}
+            assert ours, "no single-letter keys found in KEY_HELP"
+            bound = {k for name, value in plt.rcParams.items()
+                     if name.startswith("keymap.") for k in value}
+            clash = ours & bound
+            assert not clash, f"matplotlib still owns {sorted(clash)}"
+        finally:
+            dig._restore_keymap()
+            plt.close(dig.fig)

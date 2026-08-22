@@ -40,10 +40,13 @@ class AnalysisConfig:
     card_height_cm: float = 2.0
     card_cols: int = 10
     card_rows: int = 2
+    card_row_spec: Tuple[Tuple[float, int], ...] = ()
 
     def card_spec(self) -> CardSpec:
         return CardSpec(self.card_width_cm, self.card_height_cm,
-                        self.card_cols, self.card_rows)
+                        self.card_cols, self.card_rows,
+                        row_spec=tuple((float(h), int(n))
+                                       for h, n in self.card_row_spec))
 
     def to_dict(self) -> dict:
         return dict(self.__dict__)

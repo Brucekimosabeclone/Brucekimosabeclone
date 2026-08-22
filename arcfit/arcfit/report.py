@@ -194,6 +194,18 @@ def methods_text(df, typology=None, truth=None, card_spec=None,
     tier = counts.get("tier", {})
 
     cw = f"{card_spec.width_cm:g} x {card_spec.height_cm:g} cm" if card_spec else "the scale card"
+    if card_spec:
+        # Describe the rows as printed. Summarising a mixed card as "N x M
+        # squares of k cm" would misstate the reference the scale rests on.
+        groups, layout = [], card_spec.row_layout
+        for height_cm, n_cells in sorted(set(layout), key=lambda r: -r[0]):
+            n_rows = sum(1 for r in layout if r == (height_cm, n_cells))
+            side = card_spec.width_cm / n_cells
+            groups.append(f"{n_rows} row{'s' if n_rows > 1 else ''} of "
+                          f"{n_cells} squares of {side:g} cm")
+        card_desc = f"{cw}, " + " and ".join(groups)
+    else:
+        card_desc = "10 x 2 cm, 2 rows of 10 squares of 1 cm"
 
     parts = [
         "## Methods (draft)",
@@ -201,9 +213,7 @@ def methods_text(df, typology=None, truth=None, card_spec=None,
         "### Image calibration",
         "",
         f"Each object was photographed in the field beside a checkerboard scale card "
-        f"({cw}, {card_spec.cols if card_spec else 10} x "
-        f"{card_spec.rows if card_spec else 2} squares of "
-        f"{card_spec.width_cm / card_spec.cols if card_spec else 1:g} cm). "
+        f"({card_desc}). "
         "Because the photographs were taken obliquely from standing height, a scalar "
         "pixels-per-centimetre conversion is not sufficient: a circular object viewed "
         "off-axis projects to an ellipse, which would produce spurious evidence of "

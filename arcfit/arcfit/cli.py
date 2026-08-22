@@ -14,8 +14,50 @@ from .pipeline import AnalysisConfig, run_analysis
 from .scalecard import CardSpec
 
 
+def _parse_card_layout(text: str):
+    """Parse ``"1x10,1x10,2x5"`` into ``((1.0, 10), (1.0, 10), (2.0, 5))``.
+
+    Each row is ``HEIGHT_CMxCELLS``, given along the card's short side. This
+    exists because real scale cards mix square sizes -- a row of 2 cm squares
+    beside two rows of 1 cm squares is a common archaeological pattern -- and
+    ``--card-rows``/``--card-cols`` can only describe a uniform grid.
+    """
+    rows = []
+    for part in text.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        bits = part.lower().split("x")
+        if len(bits) != 2:
+            raise argparse.ArgumentTypeError(
+                f"bad card row {part!r}: expected HEIGHTxCELLS, for example 2x5")
+        try:
+            rows.append((float(bits[0]), int(bits[1])))
+        except ValueError:
+            raise argparse.ArgumentTypeError(
+                f"bad card row {part!r}: expected HEIGHTxCELLS, for example 2x5")
+    if not rows:
+        raise argparse.ArgumentTypeError("empty card layout")
+    return tuple(rows)
+
+
 def _card_from_args(a) -> CardSpec:
-    spec = CardSpec(a.card_width, a.card_height, a.card_cols, a.card_rows)
+    layout = getattr(a, "card_layout", None)
+    declared = getattr(a, "card_height", None)
+    if layout:
+        height = sum(h for h, _ in layout)
+        # The layout already states the short side. Letting --card-height
+        # disagree would leave two sources of truth for the number that governs
+        # eccentricity, so a conflict is an error rather than a silent winner.
+        if declared is not None and abs(declared - height) > 1e-6:
+            raise SystemExit(
+                f"--card-height {declared:g} contradicts --card-layout, which "
+                f"sums to {height:g} cm; drop one of them")
+        spec = CardSpec(a.card_width, height, a.card_cols, len(layout),
+                        row_spec=layout)
+    else:
+        spec = CardSpec(a.card_width, 2.0 if declared is None else declared,
+                        a.card_cols, a.card_rows)
     spec.validate()
     return spec
 
@@ -24,12 +66,18 @@ def _add_card_args(p) -> None:
     g = p.add_argument_group("scale card (set once to match your card)")
     g.add_argument("--card-width", type=float, default=10.0,
                    help="long side of the scale card in cm (default: 10)")
-    g.add_argument("--card-height", type=float, default=2.0,
+    g.add_argument("--card-height", type=float, default=None,
                    help="short side of the scale card in cm (default: 2)")
     g.add_argument("--card-cols", type=int, default=10,
                    help="squares along the long side (default: 10)")
     g.add_argument("--card-rows", type=int, default=2,
                    help="squares along the short side (default: 2)")
+    g.add_argument("--card-layout", type=_parse_card_layout, default=None,
+                   metavar="ROWS",
+                   help="rows of unequal squares, as HEIGHTxCELLS separated by "
+                        "commas, e.g. 1x10,1x10,2x5 for two rows of 1 cm "
+                        "squares and one of 2 cm. Overrides --card-height "
+                        "and --card-rows.")
 
 
 # --------------------------------------------------------------------------
@@ -119,7 +167,13 @@ def cmd_detect(a) -> int:
     pd.DataFrame(rows).to_csv(out, index=False)
     # The card-geometry check. Individually noisy -- a near head-on view carries
     # little perspective information -- so judge it on the median across the set.
-    measured = np.array([r["measured_aspect"] for r in rows], float)
+    #
+    # Only confident detections count. A low-scoring row is a quad that failed
+    # to verify as a checkerboard, so its aspect describes whatever was found
+    # instead of the card; pooling those in would let the failures outvote the
+    # successes on exactly the question the check exists to answer.
+    measured = np.array([r["measured_aspect"] for r in rows
+                         if r["status"] == "ok"], float)
     measured = measured[np.isfinite(measured)]
     if measured.size >= 5:
         med = float(np.median(measured))
@@ -134,7 +188,8 @@ def cmd_detect(a) -> int:
             print(f"  The four corners across {measured.size} photographs imply a card")
             print(f"  about {spec.width_cm:g} x {implied:.2f} cm, not "
                   f"{spec.width_cm:g} x {spec.height_cm:g} cm.")
-            print("  Measure the card with callipers and re-run with --card-height.")
+            print("  Measure the card with callipers and re-run with the right")
+            print("  --card-layout (or --card-height for a uniform card).")
             print("  A wrong height stretches the rectified plane in one direction,")
             print("  so ECCENTRICITY IS WRONG until this is right - and nothing")
             print("  downstream will look obviously broken.")
@@ -169,10 +224,15 @@ def cmd_digitize(a) -> int:
 
 
 def cmd_analyze(a) -> int:
+    # Go through _card_from_args rather than the raw namespace: it resolves
+    # --card-layout into a full row layout and supplies the default height when
+    # none was given. Reading a.card_height directly would drop the layout and
+    # pass None straight into the config.
+    spec = _card_from_args(a)
     config = AnalysisConfig(
         n_boot=a.boot, seed=a.seed, alpha=a.alpha, e_practical=a.e_practical,
-        jobs=a.jobs, card_width_cm=a.card_width, card_height_cm=a.card_height,
-        card_cols=a.card_cols, card_rows=a.card_rows)
+        jobs=a.jobs, card_width_cm=spec.width_cm, card_height_cm=spec.height_cm,
+        card_cols=spec.cols, card_rows=spec.rows, card_row_spec=spec.row_spec)
 
     study = None
     if a.simulation:

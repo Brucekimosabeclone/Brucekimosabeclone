@@ -3,7 +3,8 @@
 import numpy as np
 import pytest
 
-from arcfit.scalecard import CardSpec, detect_card, order_card_corners
+from arcfit.scalecard import (CardSpec, _checkerboard_score, detect_card,
+                              order_card_corners)
 from arcfit.simulate import render_scene
 from arcfit.calibrate import homography_from_rect, apply_homography
 
@@ -90,3 +91,74 @@ class TestCardSpec:
             CardSpec(width_cm=2.0, height_cm=10.0).validate()
         with pytest.raises(ValueError):
             CardSpec(cols=1).validate()
+
+
+REAL_CARD = CardSpec(10.0, 4.0, 10, 3, row_spec=((1.0, 10), (1.0, 10), (2.0, 5)))
+"""The card actually used in the field: 10 x 4 cm, two rows of 1 cm squares
+against one row of 2 cm squares."""
+
+
+def render_card_patch(rows, cell_px=24, flip=False):
+    """A clean, face-on rectified card image built from a row layout."""
+    total_cm = sum(h for h, _ in rows)
+    width_cm = 10.0
+    h_px = int(round(total_cm * cell_px))
+    w_px = int(round(width_cm * cell_px))
+    patch = np.full((h_px, w_px), 235, np.uint8)
+    y = 0.0
+    for height_cm, n_cells in rows:
+        y0 = int(round(y / total_cm * h_px))
+        y1 = int(round((y + height_cm) / total_cm * h_px))
+        edges = np.linspace(0, w_px, n_cells + 1).astype(int)
+        for c in range(n_cells):
+            if c % 2 == 0:
+                patch[y0:y1, edges[c]:edges[c + 1]] = 30
+        y += height_cm
+    return patch[::-1] if flip else patch
+
+
+class TestMixedRowCards:
+    """Cards whose rows differ in square size.
+
+    A single (rows, cols) pair cannot describe them, and resampling such a card
+    onto a uniform grid scores it at chance -- which is how a genuine card came
+    to lose to bare ground on real photographs.
+    """
+
+    def test_layout_defaults_to_a_uniform_grid(self):
+        assert CardSpec().row_layout == ((1.0, 10), (1.0, 10))
+
+    def test_layout_reports_the_declared_rows(self):
+        assert REAL_CARD.row_layout == ((1.0, 10), (1.0, 10), (2.0, 5))
+        assert REAL_CARD.aspect == pytest.approx(2.5)
+
+    def test_rejects_rows_that_disagree_with_the_height(self):
+        with pytest.raises(ValueError, match="sum to"):
+            CardSpec(10.0, 4.0, 10, 2, row_spec=((1.0, 10), (1.0, 10))).validate()
+
+    def test_rejects_a_degenerate_row(self):
+        with pytest.raises(ValueError):
+            CardSpec(10.0, 2.0, 10, 2, row_spec=((1.0, 10), (1.0, 1))).validate()
+
+    def test_scores_its_own_layout_highly(self):
+        patch = render_card_patch(REAL_CARD.row_layout)
+        assert _checkerboard_score(patch, REAL_CARD) > 0.95
+
+    def test_uniform_card_still_scores_highly(self):
+        """The generalisation must not cost anything on an ordinary bar."""
+        spec = CardSpec()
+        assert _checkerboard_score(render_card_patch(spec.row_layout), spec) > 0.95
+
+    def test_a_mixed_card_scores_poorly_under_a_uniform_model(self):
+        """The regression that broke the real run, pinned down."""
+        patch = render_card_patch(REAL_CARD.row_layout)
+        assert _checkerboard_score(patch, CardSpec()) < 0.8
+
+    def test_reads_the_card_either_way_up(self):
+        """Nothing constrains which end of the card faces the camera."""
+        flipped = render_card_patch(REAL_CARD.row_layout, flip=True)
+        assert _checkerboard_score(flipped, REAL_CARD) > 0.95
+
+    def test_flat_and_empty_patches_score_zero(self):
+        assert _checkerboard_score(np.full((40, 100), 128, np.uint8), REAL_CARD) == 0.0
+        assert _checkerboard_score(np.zeros((0, 0), np.uint8), REAL_CARD) == 0.0

@@ -3,7 +3,8 @@
 **Project:** reconstructing original mano dimensions from 167 field photographs
 of broken fragments.
 **Package version:** 1.1.0 · **Branch:** `claude/broken-object-ellipse-analysis-acud5i`
-**Status:** software complete and tested; awaiting real-image detection run.
+**Status:** calibration corrected against real photographs; ready to digitise.
+**Card:** 10 x 4 cm -- always pass `--card-layout 1x10,1x10,2x5`.
 
 This document is for whoever picks the work up next — a co-author, an assistant
 doing the digitising, or the author returning after a gap. `QUICKSTART.md` is
@@ -60,17 +61,42 @@ was to report it rather than correct it.
 
 ## 3. Current state
 
-**Complete and tested.** 6,400 lines across 18 modules, 201 fast tests passing
-at HEAD `188cdb7` (2 skipped, 11 slow deselected). The demo pipeline runs end to
-end on synthetic data with known ground truth.
+**Complete and tested.** The demo pipeline runs end to end on synthetic data
+with known ground truth.
 
 **Documentation.** `QUICKSTART.md` (commands only), `RUNBOOK.md` (~500 lines,
 full reasoning), `METHODS.md` (article text), `USER_GUIDE.md` (the digitising
 GUI), this file. All ship inside the supplement zip.
 
-**Not yet done.** No real photograph has been through the pipeline. Card
-detection has been validated against synthetic scenes and eyeballed on five real
-field photos, but the 167-image `arcfit detect` run has not happened.
+**The real-image run has now happened (19-photograph pilot subset).** It failed
+completely on the first attempt -- 0 of 19 confident, every row `low` -- because
+the card model was wrong (see Risk 1, now resolved). The confidence gate held
+and no bad calibration reached the data.
+
+With the card declared correctly via `--card-layout 1x10,1x10,2x5`:
+
+| Outcome | Count |
+|---|---|
+| Confident, verified on the card | 6 |
+| Flagged `low` for the operator | 13 |
+| Confident but wrong | 0 |
+
+The six confident detections score 0.68-0.94 and were confirmed by eye to sit on
+the card. The thirteen others are photographs on brightly lit sandy ground, where
+the white card carries little contrast against the soil and no candidate scores
+above threshold. **Press `m` on those** -- manual four-corner calibration is
+exactly as accurate, since the operator's corners get the same subpixel
+refinement the detector's do.
+
+An earlier version of this run produced four *confident but wrong* detections on
+specks of gravel a few pixels across. `detect_card` now discards any candidate
+too small to verify (`min_cell_px`, default 6 px per printed cell in the
+detector's working image). Below that, the per-cell means are noise and sign
+agreement reaches threshold by chance. Genuine cards here run 25-30 px per cell
+and the synthetic test card 10-12, so the floor is not tuned to either.
+
+**Still not done.** The remaining photographs beyond these 19, and no object has
+been digitised yet.
 
 ## 4. The two open risks
 
@@ -78,10 +104,24 @@ Both were spotted in the five sample photographs the author sent, and both must
 be settled **before** digitising begins, because both corrupt data that would
 then have to be re-collected.
 
-### Risk 1 — the scale card may not be 10 × 2 cm
+### Risk 1 — RESOLVED: the card is 10 × 4 cm, not 10 × 2 cm
 
-The card in the samples reads roughly **3.5–4:1**, not the 5:1 that a 10 × 2 cm
-card implies. It may be nearer 10 × 2.5 cm.
+**Settled from the photographs (2026-08-22); still worth one calliper check.**
+
+The checkered block is **10 × 4 cm**, aspect 2.5:1 — ten columns of 1 cm, and
+three rows at heights 2:1:1 (two rows of ten 1 cm squares, one row of five 2 cm
+squares). Measured on `IMG_5308` and `IMG_5540`. The square *count* is the
+strong evidence: counting squares is independent of perspective. Rectifying to
+an assumed 10 × 4 then returns cell widths of 0.97 and 1.97 cm — clean
+centimetre multiples — and printed cells are square, so the row heights are
+1 cm and 2 cm and the block is 4 cm tall.
+
+Declare it with `--card-layout 1x10,1x10,2x5` on **every** command. Measure the
+checkered block, not the white border: the border is arbitrary and unrecoverable
+from a photograph.
+
+The earlier guess in this document — "roughly 3.5–4:1, maybe 10 × 2.5 cm" — was
+an under-estimate of the error. The real discrepancy is a factor of two.
 
 This matters more than any other single number. A wrong declared height stretches
 the rectified plane along one axis only. That is a shear applied to every
@@ -89,10 +129,16 @@ outline, so it changes the fitted **eccentricity** — the study's headline
 variable — while lengths, figures, and diagnostics all still look entirely
 plausible. There is no downstream symptom.
 
-*Resolution:* callipers on the card, then `arcfit detect`, which now measures the
-imaged card's aspect ratio against the declared one and prints a **"Card
-geometry"** line either confirming it or warning loudly. Do not digitise past a
-warning.
+*Resolution:* callipers on the card, then `arcfit detect`, which measures the
+imaged card's aspect against the declared one and prints a **"Card geometry"**
+line. Do not digitise past a warning.
+
+Note that this check was **inoperative on these photographs** until
+2026-08-22. It needs camera intrinsics, and `intrinsics_from_exif` required
+`FocalLengthIn35mmFilm` — a tag Canon DSLRs do not write, so it returned `None`
+for all 19 files and the check silently never ran. It now falls back to
+`FocalLength` with the sensor width derived from `FocalPlaneXResolution`, and
+recovers intrinsics for 19/19 (f35 ≈ 27 mm on the 5D Mark II).
 
 ### Risk 2 — the card is on the object in some photos and on the ground in others
 
@@ -131,9 +177,12 @@ deliberately.
 
 The full commands are in `QUICKSTART.md`. The shape of it:
 
-1. **Calliper the card.** Long side, short side, square size.
-2. **`arcfit detect`** on all 167. Read the "Card geometry" line. If it warns,
-   re-measure and re-run with the right `--card-height` before anything else.
+1. **Calliper the card**, to confirm the 10 x 4 cm read off the photographs.
+   Measure the checkered block, not the white border.
+2. **`arcfit detect`** on everything, with `--card-layout 1x10,1x10,2x5`. Read
+   the "Card geometry" line -- it works now. Expect roughly a third confident
+   and the rest flagged; that is the bright-ground contrast problem, not a
+   regression. Do not continue past a card-geometry warning.
 3. **Ten-object pilot**, end to end, including analysis. Four checkpoints: the
    card measures its true length against the cm axes in panel *b*; bias is a few
    percent not tens; no reconstruction is shorter than its own fragment; the
@@ -173,8 +222,8 @@ The full commands are in `QUICKSTART.md`. The shape of it:
   block in the docs is written this way.
 - **The virtualenv must be active in every new terminal.** `arcfit` not
   recognised means it is not.
-- **The card size must be passed to *every* command**, not just `detect`, if it
-  differs from the 10 × 2 cm default.
+- **The card size must be passed to *every* command**, not just `detect`. It
+  does differ from the 10 × 2 cm default: use `--card-layout 1x10,1x10,2x5`.
 - **Do not put the field photographs in a public repository.** They are
   unpublished archaeological data and camera EXIF can carry GPS pointing at the
   site. Use a private repo. `arcfit` itself never reads or stores GPS —
@@ -231,3 +280,25 @@ the old behaviour.
 This is worth knowing because it is the failure mode to watch for generally: if a
 p-value and a confidence interval built from the same data disagree, one of them
 is being computed under the wrong model.
+
+## 11. A second bug, on the manual-calibration path
+
+Pressing `m` and clicking the card's four corners fed those clicks straight into
+the homography, which maps the first click to the origin and the second to
+`(width, 0)` **literally**. Starting the four clicks on a short side therefore
+assigned the card's 10 cm dimension to its 4 cm side.
+
+The consequence is not a wrong scale but a wrong *shape*: the rectified plane is
+stretched by the aspect ratio along one axis, so a true circle came out with an
+axis ratio of 25 on a 10 x 2 cm card, and 6.25 on the real 10 x 4 cm one. Two of
+the four possible starting corners produced this; the other two were correct.
+
+`USER_GUIDE.md` had always promised the tool worked the ordering out itself, and
+`order_card_corners` does exactly that -- but it was only ever wired into the
+automatic path. It is now used for manual clicks too.
+
+This one is worth remembering for the same reason as the bug above: the card
+cannot reveal it. The homography is built from the declared numbers, so
+rectifying the card's own corners reproduces 10 x 4 cm whichever way round the
+clicks went in. Only an independent shape shows the distortion, which is what
+the regression test uses.

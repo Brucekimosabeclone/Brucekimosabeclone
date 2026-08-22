@@ -11,6 +11,7 @@ import pytest
 
 from arcfit.calibrate import (
     Calibration,
+    _f35_from_tags,
     CalibrationError,
     apply_homography,
     decompose_homography,
@@ -192,3 +193,49 @@ class TestCalibrationObject:
     def test_two_point_scale_rejects_coincident(self):
         with pytest.raises(CalibrationError):
             two_point_scale([5, 5], [5, 5], 10.0)
+
+
+class TestFocalLengthFromExif:
+    """Recovering a 35mm-equivalent focal length across camera conventions.
+
+    Nothing reported to the user depends on K, but the card-geometry check does,
+    and that check is the only thing standing between a mis-declared card and a
+    silently wrong eccentricity. A camera whose EXIF cannot be read therefore
+    loses that protection entirely, without saying so.
+    """
+
+    # Canon EOS 5D Mark II, as written in the field photographs: no
+    # FocalLengthIn35mmFilm, but focal-plane resolution is present.
+    CANON = {
+        "FocalLength": 28.0,
+        "FocalPlaneXResolution": 3849.2117888965045,
+        "FocalPlaneResolutionUnit": 2,
+        "ExifImageWidth": 5616,
+    }
+
+    def test_prefers_the_explicit_35mm_tag(self):
+        tags = dict(self.CANON, FocalLengthIn35mmFilm=50)
+        assert _f35_from_tags(tags) == pytest.approx(50.0)
+
+    def test_falls_back_to_focal_plane_resolution(self):
+        """A full-frame body: the equivalent focal length is the focal length."""
+        assert _f35_from_tags(self.CANON) == pytest.approx(28.0, rel=0.05)
+
+    def test_handles_centimetre_resolution_unit(self):
+        tags = dict(self.CANON, FocalPlaneResolutionUnit=3,
+                    FocalPlaneXResolution=3849.2117888965045 / 2.54)
+        assert _f35_from_tags(tags) == pytest.approx(28.0, rel=0.05)
+
+    def test_returns_none_when_nothing_is_available(self):
+        assert _f35_from_tags({}) is None
+        assert _f35_from_tags({"FocalLength": 28.0}) is None
+
+    def test_ignores_a_zero_or_unparseable_35mm_tag(self):
+        """A camera writing 0 should fall through, not be believed."""
+        assert _f35_from_tags(dict(self.CANON, FocalLengthIn35mmFilm=0)) ==             pytest.approx(28.0, rel=0.05)
+        assert _f35_from_tags({"FocalLengthIn35mmFilm": "wide"}) is None
+
+    @pytest.mark.parametrize("x_res", [1e9, 1e-9])
+    def test_refuses_an_implausible_sensor_size(self, x_res):
+        """A wrong K is worse than none: it yields a confident, wrong tilt."""
+        assert _f35_from_tags(dict(self.CANON, FocalPlaneXResolution=x_res)) is None

@@ -14,10 +14,28 @@ It writes `work/detection_report.csv` with a confidence score per photograph.
 A low score does not mean the detection is wrong — it means it is worth a look,
 which costs one keystroke in the digitiser.
 
-Check your scale card's real dimensions before anything else. The defaults are a
-10 × 2 cm card of 1 cm squares. If yours differs, pass the right values to every
-command. Getting this wrong scales every measurement by a constant, so it is
-worth measuring the card with calipers once.
+Check your scale card's real dimensions before anything else, and pass them to
+*every* command. The built-in default is a uniform 10 × 2 cm card of 1 cm
+squares, which is **not** the card used in this project.
+
+The field card is **10 × 4 cm**: two rows of ten 1 cm squares against one row of
+five 2 cm squares. Describe it with `--card-layout`:
+
+```bash
+arcfit detect --images photos/ --workdir work/ --card-layout 1x10,1x10,2x5
+```
+
+Each entry is `HEIGHTxCELLS` along the short side, so the layout also fixes the
+card height (4 cm here) and `--card-height` becomes redundant.
+
+Measurements are taken against the **checkered block** — the printed squares —
+not the white border around them. The border's width is arbitrary and cannot be
+recovered from a photograph, so it plays no part in the calibration.
+
+Getting the height wrong does not merely rescale the results. It stretches the
+rectified plane along one axis, which changes fitted **eccentricity** — the
+thing the study is about — while lengths and figures still look plausible. There
+is no downstream symptom, so measure the card with callipers once.
 
 ## The rhythm of one object
 
@@ -25,7 +43,13 @@ worth measuring the card with calipers once.
    Glance at it. If the outline is not on the card, press `d` to retry or `m`
    to click the four corners yourself.
 2. Zoom to the object with the toolbar. **Clicks are ignored while a pan or zoom
-   tool is active**, so you cannot accidentally add points while navigating.
+   tool is active**, so you cannot accidentally add points while navigating --
+   the title line says `PAN ACTIVE - clicks ignored` whenever that is why
+   nothing is happening. Click the same toolbar button again to leave the tool.
+
+   The digitiser's own keys take priority while its window is open: matplotlib
+   normally binds `p` to pan, `o` to zoom, `s` to save and `c`/`h` to its view
+   history, and those are suppressed so they cannot fight the keys below.
 3. Click along the surviving outline. Watch the dashed preview: it is the
    reconstruction updating live, and it is the fastest way to notice a bad point.
 4. Check the live readout — 2a, 2b, e, and arc coverage.
@@ -96,8 +120,14 @@ arcfit digitize --images photos/ --workdir work_repeat/ --operator BK
 python3-tk` on Linux) or `pip install PySide6`.
 
 **Detection keeps failing on one photograph** — press `m` and click the four
-corners, starting at one end of the long side and going round consistently. The
-tool works out the ordering itself.
+corners of the checkered block, going round consistently. Any corner may be the
+first: the tool identifies the long side itself from the four positions, so
+starting on a short side is safe.
+
+Automatic detection is unreliable on brightly lit sandy ground, where the white
+card carries little contrast against the soil. On those photographs `m` is the
+expected route rather than a fallback, and is no less accurate — the operator's
+corners are refined the same way the detector's are.
 
 **No scale card visible at all** — press `t` for a two-point scale against any
 object of known length. This does **not** correct perspective, and the record is

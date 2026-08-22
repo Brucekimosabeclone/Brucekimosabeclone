@@ -205,3 +205,58 @@ class TestMeasurementSheet:
         assert rep.unmatched_rows == ["D"]
         assert rep.missing_records == ["C"]
         assert not rep.ok
+
+
+class TestCardLayoutReachesTheAnalysis:
+    """A mixed-row card declared on the command line must survive to the output.
+
+    The analysis rebuilds its own CardSpec from the saved config rather than
+    being handed the parsed one, so a card described by --card-layout can be
+    silently downgraded to a uniform grid between the command line and the
+    methods text -- where it would then misdescribe the scale the whole study
+    rests on.
+    """
+
+    LAYOUT = ((1.0, 10), (1.0, 10), (2.0, 5))
+
+    def test_config_round_trips_the_layout(self):
+        cfg = AnalysisConfig(card_width_cm=10.0, card_height_cm=4.0,
+                             card_cols=10, card_rows=3,
+                             card_row_spec=self.LAYOUT)
+        spec = cfg.card_spec()
+        spec.validate()
+        assert spec.row_layout == self.LAYOUT
+        assert spec.height_cm == pytest.approx(4.0)
+        assert spec.aspect == pytest.approx(2.5)
+
+    def test_config_survives_serialisation(self):
+        """to_dict feeds config.json, which is what the supplement ships."""
+        cfg = AnalysisConfig(card_width_cm=10.0, card_height_cm=4.0,
+                             card_cols=10, card_rows=3,
+                             card_row_spec=self.LAYOUT)
+        restored = AnalysisConfig(**cfg.to_dict())
+        assert restored.card_spec().row_layout == self.LAYOUT
+
+    def test_default_config_is_still_a_uniform_card(self):
+        assert AnalysisConfig().card_spec().row_layout == ((1.0, 10), (1.0, 10))
+
+    def test_cli_resolves_the_layout_for_analyze(self):
+        """cmd_analyze must not read --card-height off the namespace directly.
+
+        Its default is None so that a conflict with --card-layout can be
+        detected; taking it raw put None into the config and broke the methods
+        text at the very end of a long run.
+        """
+        import argparse
+        from arcfit.cli import _add_card_args, _card_from_args
+
+        parser = argparse.ArgumentParser()
+        _add_card_args(parser)
+
+        spec = _card_from_args(parser.parse_args(["--card-layout", "1x10,1x10,2x5"]))
+        assert spec.height_cm == pytest.approx(4.0)
+        assert spec.row_spec == self.LAYOUT
+
+        plain = _card_from_args(parser.parse_args([]))
+        assert plain.height_cm == pytest.approx(2.0), "default height must survive"
+        assert plain.row_spec == ()
