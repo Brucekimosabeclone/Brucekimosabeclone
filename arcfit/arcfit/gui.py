@@ -47,6 +47,7 @@ KEY_HELP = [
     ("s", "toggle edge snapping"),
     ("e", "toggle the edge overlay"),
     ("g", "cycle display contrast"),
+    ("o", "toggle: is the scale card resting ON the object (not the ground)?"),
     ("x", "exclude / re-include this object"),
     ("h", "show this help"),
     ("q", "save and quit"),
@@ -207,6 +208,18 @@ class DigitizerState:
     def clear_points(self) -> None:
         self.record.points_px = []
         self.record.points_px_raw = []
+
+    def toggle_card_on_object(self) -> bool:
+        """Record whether the card sits on the object rather than the ground.
+
+        This flips the sign of the parallax term. With the card on the ground it
+        defines a plane *below* the traced outline and sizes read slightly
+        large; with the card resting on the object it is at or above that
+        outline and they read small. Left unrecorded, a mixed set turns a
+        correctable constant bias into irreducible scatter.
+        """
+        self.record.card_on_object = not self.record.card_on_object
+        return self.record.card_on_object
 
     def toggle_excluded(self, reason: str = "") -> bool:
         self.record.excluded = not self.record.excluded
@@ -447,6 +460,8 @@ class Digitizer:
         if m:
             bits.append(f"2a={m['major_axis_cm']:.2f} cm  2b={m['minor_axis_cm']:.2f} cm  "
                         f"e={m['eccentricity']:.3f}  arc={m['coverage_deg']:.0f}°")
+        if rec.card_on_object:
+            bits.append("card ON OBJECT (not ground)")
         if rec.excluded:
             bits.append("EXCLUDED")
         if st.message:
@@ -506,6 +521,10 @@ class Digitizer:
             self.show_edges = not self.show_edges
         elif k == "g":
             self.contrast_mode = (self.contrast_mode + 1) % 4
+        elif k == "o":
+            on = st.toggle_card_on_object()
+            st.message = ("card recorded as resting ON the object"
+                          if on else "card recorded as on the ground")
         elif k == "x":
             st.message = "excluded" if st.toggle_excluded() else "re-included"
         elif k in ("h", "?"):

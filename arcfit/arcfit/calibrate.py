@@ -36,6 +36,7 @@ __all__ = [
     "intrinsics_from_exif",
     "decompose_homography",
     "parallax_inflation",
+    "estimate_card_aspect",
 ]
 
 
@@ -356,3 +357,32 @@ class Calibration:
     def from_dict(cls, d: dict) -> "Calibration":
         known = {f for f in cls.__dataclass_fields__}
         return cls(**{k: v for k, v in (d or {}).items() if k in known})
+
+
+def estimate_card_aspect(corners_px, K) -> float:
+    """Measure a rectangle's true width:height ratio from one view.
+
+    Independent of what the operator declared the card to be, which is the
+    point: a wrong declared height stretches the rectified plane in one
+    direction and corrupts eccentricity while leaving everything else looking
+    fine. Nothing else in the pipeline can catch that, because the homography is
+    *built* from the declared numbers and so always reproduces them.
+
+    For a homography H taking the unit square to the imaged rectangle,
+    ``K^-1 H = [w*r1, h*r2, t]`` with r1, r2 unit vectors, so the ratio of the
+    first two column norms is the rectangle's aspect.
+
+    Accuracy depends on perspective: a perfectly head-on view carries no depth
+    information and the estimate becomes ill-conditioned, so a single photograph
+    can be noisy. Take the median across many.
+    """
+    corners = np.asarray(corners_px, float).reshape(4, 2)
+    unit = np.array([[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]])
+    H, _ = homography_from_points(unit, corners)
+
+    M = np.linalg.inv(np.asarray(K, float)) @ H
+    n1 = float(np.linalg.norm(M[:, 0]))
+    n2 = float(np.linalg.norm(M[:, 1]))
+    if n2 < 1e-12:
+        return float("nan")
+    return n1 / n2

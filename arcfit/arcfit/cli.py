@@ -52,7 +52,8 @@ def cmd_demo(a) -> int:
 def cmd_detect(a) -> int:
     from .records import ObjectRecord, scan_images
     from .scalecard import detect_card
-    from .calibrate import Calibration, CalibrationError
+    from .calibrate import (Calibration, CalibrationError, estimate_card_aspect,
+                            intrinsics_from_exif)
 
     spec = _card_from_args(a)
     images = scan_images(a.images)
@@ -73,8 +74,21 @@ def cmd_detect(a) -> int:
             return 1
         status = "none"
         score = float("nan")
+        aspect = float("nan")
         if det is not None:
             score = det.score
+            # Measure the card's real aspect ratio, independently of what was
+            # declared. Nothing else can catch a wrong --card-height: the
+            # homography is built from the declared numbers, so it always
+            # reproduces them however wrong they are.
+            if rec.image_size_px:
+                K = intrinsics_from_exif(path, int(rec.image_size_px[0]),
+                                         int(rec.image_size_px[1]))
+                if K is not None:
+                    try:
+                        aspect = estimate_card_aspect(det.corners_px, K)
+                    except Exception:
+                        aspect = float("nan")
             try:
                 rec.calibration = Calibration.from_rect(
                     det.corners_px, spec.width_cm, spec.height_cm, source="auto",
@@ -91,7 +105,11 @@ def cmd_detect(a) -> int:
         if status in ("none", "bad"):
             failed += 1
         rows.append({"object_id": rec.object_id, "status": status, "score": score,
-                     "tilt_deg": rec.calibration.tilt_deg})
+                     "tilt_deg": rec.calibration.tilt_deg,
+                     "measured_aspect": aspect,
+                     "implied_height_cm": (spec.width_cm / aspect
+                                           if np.isfinite(aspect) and aspect > 0
+                                           else float("nan"))})
         print(f"\r  {i}/{len(images)}  confident {found}  low {low}  failed {failed}",
               end="", flush=True)
     print()
@@ -99,6 +117,36 @@ def cmd_detect(a) -> int:
     import pandas as pd
     out = workdir / "detection_report.csv"
     pd.DataFrame(rows).to_csv(out, index=False)
+    # The card-geometry check. Individually noisy -- a near head-on view carries
+    # little perspective information -- so judge it on the median across the set.
+    measured = np.array([r["measured_aspect"] for r in rows], float)
+    measured = measured[np.isfinite(measured)]
+    if measured.size >= 5:
+        med = float(np.median(measured))
+        implied = spec.width_cm / med if med > 0 else float("nan")
+        declared = spec.aspect
+        print(f"\nCard geometry: declared {spec.width_cm:g} x {spec.height_cm:g} cm "
+              f"(aspect {declared:.2f}); measured aspect {med:.2f} "
+              f"(n={measured.size})")
+        if np.isfinite(implied) and abs(med / declared - 1.0) > 0.08:
+            print("\n" + "!" * 68)
+            print("WARNING: the card does not appear to be the size you declared.")
+            print(f"  The four corners across {measured.size} photographs imply a card")
+            print(f"  about {spec.width_cm:g} x {implied:.2f} cm, not "
+                  f"{spec.width_cm:g} x {spec.height_cm:g} cm.")
+            print("  Measure the card with callipers and re-run with --card-height.")
+            print("  A wrong height stretches the rectified plane in one direction,")
+            print("  so ECCENTRICITY IS WRONG until this is right - and nothing")
+            print("  downstream will look obviously broken.")
+            print("!" * 68)
+        else:
+            print("  Consistent with the declared size.")
+    elif measured.size:
+        print(f"\nCard geometry: too few EXIF-bearing photographs "
+              f"({measured.size}) to check the declared card size.")
+    else:
+        print("\nCard geometry: not checked (no usable EXIF focal length).")
+
     print(f"\nConfident: {found}   Low confidence: {low}   Failed: {failed}")
     if low or failed:
         print("Low-confidence and failed photographs still need attention in the\n"

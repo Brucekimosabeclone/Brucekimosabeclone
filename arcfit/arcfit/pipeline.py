@@ -66,6 +66,7 @@ def _analyse_one(args) -> Tuple[ObjectFit, Dict[str, object]]:
         "card_detection_score": cal.detection_score,
         "n_points_raw": len(rec.points_px_raw),
         "snap_used": rec.snap_used,
+        "card_on_object": bool(rec.card_on_object),
         "image": rec.image,
     }
 

@@ -439,7 +439,15 @@ the window whenever you like.
 
 Keys you will actually use: `n` next · right-click undo · `d` re-detect card ·
 `m` manual four corners · `g` cycle contrast · `e` edge overlay · `s` snapping
-on/off · `x` exclude · `q` save and quit.
+on/off · `o` card-on-object · `x` exclude · `q` save and quit.
+
+**Press `o` whenever the scale card is resting on the object rather than on the
+ground.** It matters more than it looks. The card defines the plane everything is
+measured against: on the ground that plane sits below the outline you are
+tracing and sizes come out slightly large; on the object it sits at or above and
+they come out small. A consistent offset is measurable against your callipers
+and can be corrected afterwards, but a mixture that was never recorded is just
+scatter you cannot remove. The status line shows the current setting.
 
 Two points worth repeating from the user guide. **Spread beats density** — twenty
 points across the whole surviving arc are worth more than sixty crowded into one

@@ -83,6 +83,7 @@ class ObjectRecord:
     points_px: List[List[float]] = field(default_factory=list)
     points_px_raw: List[List[float]] = field(default_factory=list)
     snap_used: bool = False
+    card_on_object: bool = False
     operator: str = ""
     timestamp_utc: str = field(default_factory=utc_now)
     notes: str = ""

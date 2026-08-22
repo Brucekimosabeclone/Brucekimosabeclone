@@ -227,6 +227,25 @@ def validate_against_truth(results, measurements, alpha: float = 0.05,
                     out["diff_vs_coverage_slope"] = float(lr.slope)
                     out["diff_vs_coverage_p"] = float(lr.pvalue)
 
+            # Split by where the card was. If the two groups disagree, that is
+            # the parallax term measured directly from the assemblage rather
+            # than modelled -- the card-on-ground group should read high
+            # relative to the card-on-object group.
+            if "card_on_object" in at_widest.columns:
+                by_card = {}
+                for on_object, grp in at_widest.groupby(
+                        at_widest["card_on_object"].fillna(False).astype(bool)):
+                    if len(grp) >= 3:
+                        key = "card_on_object" if on_object else "card_on_ground"
+                        by_card[key] = bland_altman(
+                            grp["minor_axis_cm"].to_numpy(float),
+                            grp["width_across_cm"].to_numpy(float), alpha=alpha)
+                out["agreement_by_card_plane"] = by_card
+                if len(by_card) == 2:
+                    out["card_plane_bias_difference_cm"] = float(
+                        by_card["card_on_ground"].bias
+                        - by_card["card_on_object"].bias)
+
             by_tier = {}
             for tier, grp in at_widest.groupby("tier", dropna=True):
                 if len(grp) >= 3:

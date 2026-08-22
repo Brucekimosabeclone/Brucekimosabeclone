@@ -68,6 +68,7 @@ DATA_DICTIONARY: List[Dict[str, str]] = [
     ("camera_height_cm", "cm", "Camera height above the ground plane, estimated from EXIF focal length. Used only for the parallax diagnostic."),
     ("reproj_rms_cm", "cm", "Reprojection residual of the scale-card homography. A calibration quality check."),
     ("card_detection_score", "", "Confidence of automatic scale-card detection, 0-1. Blank where calibration was manual."),
+    ("card_on_object", "boolean", "True if the scale card rested on the object rather than the ground. This flips the sign of the parallax term: card on the ground puts the reference plane below the traced outline and sizes read slightly large, card on the object puts it at or above and they read small."),
     ("calibration_mode", "", "homography (rectified) or two_point (scalar scale only)."),
     ("n_boot", "count", "Bootstrap replicates used for intervals and for the circularity test."),
     ("seed", "", "Random seed, recorded so every interval and p-value is exactly reproducible."),

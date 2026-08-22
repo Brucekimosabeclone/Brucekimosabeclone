@@ -165,6 +165,18 @@ class TestPreviewAndStatus:
         m = st.preview_metrics()
         assert m is not None and m["major_axis_cm"] > 0
 
+    def test_card_plane_toggle_round_trips(self, scene):
+        """Which plane the card sat in flips the sign of the parallax term, so
+        it has to be captured while the photograph is on screen."""
+        st, _, work = scene
+        assert st.record.card_on_object is False
+        assert st.toggle_card_on_object() is True
+        st.save()
+        st.next_image()
+        st.prev_image()
+        assert st.record.card_on_object is True
+        assert st.toggle_card_on_object() is False
+
     def test_exclusion_round_trips(self, scene):
         st, _, _ = scene
         assert st.toggle_excluded("broken beyond use") is True
